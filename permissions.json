@@ -1,0 +1,12 @@
+{
+	"allow_animation_generation": true,
+	"allow_usb_device_control": false,
+	"require_approval_for_usb_commands": true,
+	"require_approval_for_new_scripts": true,
+	"require_approval_for_animation_modifications": true,
+	"restricted_paths": [
+		"/firmware",
+		"/firmware/engine",
+		"/firmware/subsystems"
+	]
+}

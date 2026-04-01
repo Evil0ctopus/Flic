@@ -1,0 +1,54 @@
+{
+  "curiosity": 0.2,
+  "calm": 0.8,
+  "surprise": 0.1,
+  "reactivity": 0.3,
+  "growth": {
+    "memory_bias": 0.6,
+    "proposal_bias": 0.4,
+    "emotion_adaptation": 0.5,
+    "idle_exploration": 0.35
+  },
+  "idle_preferences": {
+    "calm": "slow_breath",
+    "curious": "bright_blink",
+    "happy": "gentle_wave",
+    "sleepy": "low_glow",
+    "surprised": "sharp_flash"
+  },
+  "expression_preferences": {
+    "calm": "small_eyes",
+    "curious": "tilted_eyes",
+    "happy": "wide_smile",
+    "sleepy": "half_lids",
+    "surprised": "round_eyes"
+  },
+  "notes": "Flic begins life gentle, curious, and calm. It grows through memory, proposals, and safe expressive motion.",
+  "emotion_led_map": {
+    "calm": {
+      "r": 0,
+      "g": 0,
+      "b": 40
+    },
+    "curious": {
+      "r": 255,
+      "g": 200,
+      "b": 0
+    },
+    "happy": {
+      "r": 0,
+      "g": 255,
+      "b": 80
+    },
+    "surprised": {
+      "r": 255,
+      "g": 255,
+      "b": 255
+    },
+    "sleepy": {
+      "r": 80,
+      "g": 0,
+      "b": 80
+    }
+  }
+}

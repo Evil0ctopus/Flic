@@ -1,0 +1,35 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "PlatformIO: Build",
+      "type": "shell",
+      "command": "python",
+      "args": ["-m", "platformio", "run"],
+      "group": "build",
+      "problemMatcher": []
+    },
+    {
+      "label": "PlatformIO: Upload",
+      "type": "shell",
+      "command": "python",
+      "args": ["-m", "platformio", "run", "--target", "upload"],
+      "group": "build",
+      "problemMatcher": []
+    },
+    {
+      "label": "PlatformIO: Monitor",
+      "type": "shell",
+      "command": "python",
+      "args": ["-m", "platformio", "device", "monitor", "--baud", "115200"],
+      "problemMatcher": []
+    },
+    {
+      "label": "Generate First Animation",
+      "type": "shell",
+      "command": "python",
+      "args": ["ai/scripts/generate_first_animation.py"],
+      "problemMatcher": []
+    }
+  ]
+}

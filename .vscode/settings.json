@@ -1,0 +1,8 @@
+{
+  "C_Cpp.default.configurationProvider": "platformio.platformio-ide",
+  "files.associations": {
+    "Arduino.h": "cpp",
+    "M5Unified.h": "cpp"
+  },
+  "platformio-ide.autoOpenOutput": false
+}

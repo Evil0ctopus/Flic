@@ -1,0 +1,7 @@
+{
+	"first_animation": {
+		"description": "Flic created its first animation.",
+		"trigger": "animation_created",
+		"unlocked": false
+	}
+}
