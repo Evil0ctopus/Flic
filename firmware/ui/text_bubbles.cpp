@@ -5,7 +5,7 @@
 namespace Flic {
 
 namespace {
-constexpr bool kEnableBubbleScaleAnimation = true;
+constexpr bool kEnableBubbleScaleAnimation = false;
 }
 
 bool TextBubbles::begin() {
@@ -31,6 +31,10 @@ void TextBubbles::showMessage(const String& msg, BubbleSize size, const String& 
             }
         }
         return;
+    }
+
+    if (visible_ && msg != message_) {
+        clearPreviousBubble();
     }
 
     message_ = msg;
