@@ -278,9 +278,6 @@ void CommunicationEngine::notify(const String& msg, const String& emotion) {
         lastNotifyMs_ = nowMs;
     }
     speakLED(normalizedEmotion);
-    if (lightEngine_ != nullptr && msg.length() > 0) {
-        lightEngine_->expressUtterance(msg, normalizedEmotion);
-    }
 
     String notifyAnimation = "blink";
     if (emotion == "curious") {

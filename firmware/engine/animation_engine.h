@@ -9,6 +9,7 @@ public:
     bool begin();
     bool hasRealAnimations() const;
     bool isPlaying() const;
+    float playbackSpeed() const;
     void setPlaybackSpeed(float speed);
     bool playFirstAnimation();
     bool playAnimation(const char* fileName);
@@ -18,10 +19,8 @@ public:
     bool generateFirstAnimationIfNeeded();
 
 private:
-    bool isPlaying_ = false;
     float playbackSpeed_ = 1.0f;
     bool loadFirstAnimationFromDisk(String& filePath);
-    bool renderAnimationFile(const String& filePath);
 };
 
 }  // namespace Flic

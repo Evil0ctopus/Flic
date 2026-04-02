@@ -12,6 +12,7 @@
 namespace Flic {
 namespace {
 constexpr const char* kEmotionStatePath = "/ai/memory/emotion_state.json";
+// v0.1 keeps emotion persistence RAM-only to avoid SD stalls and preserve boot stability.
 constexpr bool kDisableSdPersistence = true;
 constexpr float kMinimumStrength = 0.05f;
 constexpr float kStrongStrength = 0.7f;

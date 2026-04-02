@@ -1,1 +1,4 @@
-{}
+{
+	"reserved": true,
+	"note": "Reserved for future AI manifest usage; currently unused by firmware."
+}

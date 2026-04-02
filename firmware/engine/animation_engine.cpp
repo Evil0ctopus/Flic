@@ -16,6 +16,20 @@ constexpr uint16_t kMinimumFps = 10;
 constexpr uint16_t kMaximumFps = 20;
 constexpr float kMinimumPlaybackSpeed = 0.25f;
 constexpr float kMaximumPlaybackSpeed = 4.0f;
+constexpr uint32_t kAnimationQueueWaitMs = 0;
+constexpr uint32_t kLongAnimationWarnMs = 1000;
+constexpr uint32_t kAnimationTaskStackWords = 7168;
+constexpr uint32_t kAnimationTaskPriority = 1;
+
+struct AnimationRequest {
+    char path[96];
+    uint32_t queuedAtMs = 0;
+};
+
+QueueHandle_t gAnimationQueue = nullptr;
+TaskHandle_t gAnimationTask = nullptr;
+AnimationEngine* gAnimationEngine = nullptr;
+volatile bool gAnimationBusy = false;
 
 bool endsWithJson(const String& value) {
     return value.endsWith(".json");
@@ -121,7 +135,69 @@ bool loadAnimationDocument(const String& path, Animation& animation) {
 }  // namespace
 
 bool AnimationEngine::begin() {
+    gAnimationEngine = this;
+    if (gAnimationQueue == nullptr) {
+        gAnimationQueue = xQueueCreate(2, sizeof(AnimationRequest));
+    }
+    if (gAnimationTask == nullptr && gAnimationQueue != nullptr) {
+        auto animationTask = [](void* parameter) {
+            auto* owner = static_cast<AnimationEngine*>(parameter);
+            AnimationRequest request{};
+            for (;;) {
+                if (gAnimationQueue != nullptr && xQueueReceive(gAnimationQueue, &request, portMAX_DELAY) == pdTRUE) {
+                    if (owner != nullptr) {
+                        Serial.printf("Flic: animation dequeued %s after %lu ms\n",
+                                      request.path, static_cast<unsigned long>(millis() - request.queuedAtMs));
+                        Animation animation;
+                        const String filePath = String(request.path);
+                        if (!loadAnimationDocument(filePath, animation)) {
+                            continue;
+                        }
+
+                        auto& display = M5.Display;
+                        const float speed = owner->playbackSpeed() < kMinimumPlaybackSpeed ? kMinimumPlaybackSpeed : owner->playbackSpeed();
+                        const uint32_t frameInterval = static_cast<uint32_t>((1000.0f / animation.fps) / speed);
+                        const unsigned long startMs = millis();
+                        gAnimationBusy = true;
+                        Serial.printf("Flic: animation start %s (%u frames, %u fps)\n",
+                                      filePath.c_str(), static_cast<unsigned>(animation.frames.size()), static_cast<unsigned>(animation.fps));
+                        WebUiEventHook::emit("animation", String("{\"kind\":\"start\",\"name\":\"") + animation.name +
+                                                             "\",\"fps\":" + animation.fps + ",\"frames\":" +
+                                                             static_cast<uint32_t>(animation.frames.size()) + "}");
+                        for (const Frame& frame : animation.frames) {
+                            display.startWrite();
+                            display.fillScreen(TFT_BLACK);
+                            for (const Pixel& pixel : frame.pixels) {
+                                display.drawPixel(pixel.x, pixel.y, pixel.color);
+                            }
+                            display.endWrite();
+
+                            const uint32_t delayMs = frame.durationMs > 0 ? static_cast<uint32_t>(frame.durationMs / speed) : frameInterval;
+                            vTaskDelay(pdMS_TO_TICKS(delayMs == 0 ? 1 : delayMs));
+                        }
+                        gAnimationBusy = false;
+                        const unsigned long elapsedMs = millis() - startMs;
+                        Serial.printf("Flic: animation end %s (%lu ms)\n", filePath.c_str(), static_cast<unsigned long>(elapsedMs));
+                        if (elapsedMs > kLongAnimationWarnMs) {
+                            Serial.printf("Flic: animation ran long (%lu ms)\n", static_cast<unsigned long>(elapsedMs));
+                        }
+                        WebUiEventHook::emit("animation", String("{\"kind\":\"end\",\"name\":\"") + animation.name + "\"}");
+                    }
+                }
+            }
+        };
+        xTaskCreatePinnedToCore(animationTask, "anim_task", kAnimationTaskStackWords, this, kAnimationTaskPriority, &gAnimationTask, 1);
+    }
+
+    if (gAnimationQueue == nullptr || gAnimationTask == nullptr) {
+        Serial.println("Flic: animation worker unavailable; playback may be fallback synchronous");
+    }
+
     return SdManager::isMounted() && SD.exists(kAnimationRoot);
+}
+
+float AnimationEngine::playbackSpeed() const {
+    return playbackSpeed_;
 }
 
 void AnimationEngine::setPlaybackSpeed(float speed) {
@@ -154,7 +230,7 @@ bool AnimationEngine::hasRealAnimations() const {
 }
 
 bool AnimationEngine::isPlaying() const {
-    return isPlaying_;
+    return gAnimationBusy;
 }
 
 bool AnimationEngine::playFirstAnimation() {
@@ -163,7 +239,21 @@ bool AnimationEngine::playFirstAnimation() {
         return false;
     }
 
-    return renderAnimationFile(filePath);
+    if (gAnimationQueue == nullptr || gAnimationEngine == nullptr) {
+        return false;
+    }
+
+    AnimationRequest request{};
+    snprintf(request.path, sizeof(request.path), "%s", filePath.c_str());
+    request.queuedAtMs = millis();
+
+    if (xQueueSend(gAnimationQueue, &request, kAnimationQueueWaitMs) != pdTRUE) {
+        Serial.printf("Flic: animation queue full, dropped %s\n", request.path);
+        return false;
+    }
+
+    Serial.printf("Flic: animation queued %s\n", request.path);
+    return true;
 }
 
 bool AnimationEngine::playAnimation(const char* fileName) {
@@ -176,7 +266,21 @@ bool AnimationEngine::playAnimation(const char* fileName) {
         return false;
     }
 
-    return renderAnimationFile(path);
+    if (gAnimationQueue == nullptr || gAnimationEngine == nullptr) {
+        return false;
+    }
+
+    AnimationRequest request{};
+    snprintf(request.path, sizeof(request.path), "%s", path.c_str());
+    request.queuedAtMs = millis();
+
+    if (xQueueSend(gAnimationQueue, &request, kAnimationQueueWaitMs) != pdTRUE) {
+        Serial.printf("Flic: animation queue full, dropped %s\n", request.path);
+        return false;
+    }
+
+    Serial.printf("Flic: animation queued %s\n", request.path);
+    return true;
 }
 
 bool AnimationEngine::playPreset(const String& preset) {
@@ -287,36 +391,6 @@ bool AnimationEngine::loadFirstAnimationFromDisk(String& filePath) {
     }
 
     return false;
-}
-
-bool AnimationEngine::renderAnimationFile(const String& filePath) {
-    Animation animation;
-    if (!loadAnimationDocument(filePath, animation)) {
-        return false;
-    }
-
-    auto& display = M5.Display;
-    const float speed = playbackSpeed_ < kMinimumPlaybackSpeed ? kMinimumPlaybackSpeed : playbackSpeed_;
-    const uint32_t frameInterval = static_cast<uint32_t>((1000.0f / animation.fps) / speed);
-    isPlaying_ = true;
-    WebUiEventHook::emit("animation", String("{\"kind\":\"start\",\"name\":\"") + animation.name +
-                                         "\",\"fps\":" + animation.fps + ",\"frames\":" +
-                                         static_cast<uint32_t>(animation.frames.size()) + "}");
-    for (const Frame& frame : animation.frames) {
-        display.startWrite();
-        display.fillScreen(TFT_BLACK);
-        for (const Pixel& pixel : frame.pixels) {
-            display.drawPixel(pixel.x, pixel.y, pixel.color);
-        }
-        display.endWrite();
-
-        const uint32_t delayMs = frame.durationMs > 0 ? static_cast<uint32_t>(frame.durationMs / speed) : frameInterval;
-        delay(delayMs);
-    }
-    isPlaying_ = false;
-    WebUiEventHook::emit("animation", String("{\"kind\":\"end\",\"name\":\"") + animation.name + "\"}");
-
-    return true;
 }
 
 }  // namespace Flic

@@ -6,10 +6,12 @@
 
 namespace Flic {
 namespace {
+// Embedded runtime WebUI is the current source of truth; webui/ is archive/reference only.
 constexpr uint32_t kWifiConnectTimeoutMs = 10000;
 constexpr uint32_t kBroadcastIntervalMs = 1000;
 constexpr const char* kFallbackApSsid = "Flic-Setup";
-constexpr const char* kFallbackApPassword = "flic1234";
+// Development-only fallback password; change this for real deployments.
+constexpr const char* kFallbackApPassword = "flic-dev-only";
 constexpr const char* kHostname = "flic";
 constexpr uint16_t kDnsPort = 53;
 

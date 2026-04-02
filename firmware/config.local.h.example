@@ -1,0 +1,14 @@
+#pragma once
+
+// Copy this file to: firmware/config.local.h
+// Then set your private Wi-Fi credentials.
+// This file is meant to stay uncommitted.
+
+#define FLIC_LOCAL_CONFIG 1
+
+namespace Flic {
+
+constexpr const char* kWiFiSSID = "YOUR_WIFI_SSID";
+constexpr const char* kWiFiPassword = "YOUR_WIFI_PASSWORD";
+
+}  // namespace Flic

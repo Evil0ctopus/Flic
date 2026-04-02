@@ -10,6 +10,7 @@ namespace {
 constexpr const char* kMemoryIndexPath = "/ai/memory/memory_index.json";
 constexpr size_t kMaxLearningEvents = 48;
 constexpr unsigned long kVoicePersistCooldownMs = 1200;
+// v0.1 keeps learning persistence RAM-only to avoid SD stalls and preserve boot stability.
 constexpr bool kDisableSdPersistence = true;
 }
 

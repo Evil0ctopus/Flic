@@ -1,5 +1,11 @@
 #pragma once
 
+#include <Arduino.h>
+
+#if __has_include("config.local.h")
+#include "config.local.h"
+#endif
+
 namespace Flic {
 
 constexpr const char* kMemoryRoot = "/ai/memory";
@@ -10,8 +16,10 @@ constexpr int8_t kExternalRgbLedPin = 5;
 constexpr uint8_t kExternalRgbLedCount = 10;
 
 // WiFi Configuration
-constexpr const char* kWiFiSSID = "Lorson";
-constexpr const char* kWiFiPassword = "5733014551";
+#ifndef FLIC_LOCAL_CONFIG
+constexpr const char* kWiFiSSID = "";
+constexpr const char* kWiFiPassword = "";
+#endif
 constexpr uint32_t kWiFiConnectTimeoutMs = 30000;
 
 }  // namespace Flic

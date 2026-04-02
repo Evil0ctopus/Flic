@@ -8,6 +8,24 @@ namespace Flic {
 
 namespace {
 constexpr uint8_t kSpeechOutputVolume = 120;
+constexpr uint32_t kTtsQueueWaitMs = 0;
+constexpr uint32_t kTtsLongSpeechWarnMs = 2500;
+constexpr uint32_t kTtsTaskStackWords = 8192;
+constexpr uint32_t kTtsTaskPriority = 2;
+
+struct TtsRequest {
+    char text[224];
+    char emotion[24];
+    char lang[8];
+    uint32_t queuedAtMs = 0;
+};
+
+QueueHandle_t gTtsQueue = nullptr;
+TaskHandle_t gTtsTask = nullptr;
+volatile bool gTtsBusy = false;
+
+void processSpeechRequest(AudioOutput* owner, const TtsRequest& request);
+void ttsWorkerTask(void* parameter);
 
 uint8_t clampVolume(uint8_t volume) {
     return volume;
@@ -91,6 +109,109 @@ String sanitizeSpeechText(const String& input) {
     return cleaned;
 }
 
+void processSpeechRequest(AudioOutput* owner, const TtsRequest& request) {
+    if (owner == nullptr) {
+        return;
+    }
+
+    const unsigned long startMs = millis();
+    gTtsBusy = true;
+    Serial.printf("[AudioOutput] TTS start (queued %lu ms ago): %s\n",
+                  static_cast<unsigned long>(startMs - request.queuedAtMs), request.text);
+
+    AudioOutputM5Speaker audioOut(&M5.Speaker, 0);
+    if (!audioOut.begin()) {
+        Serial.println("[AudioOutput] Failed to initialize audio output");
+        owner->playEmotionTone(String(request.emotion));
+        gTtsBusy = false;
+        return;
+    }
+
+    ESP8266SAM sam;
+
+    uint8_t speed = 58;
+    uint8_t pitch = 50;
+    uint8_t mouth = 138;
+    uint8_t throat = 118;
+    const String emotion = String(request.emotion);
+    const String styleName = owner->voiceStyleName();
+
+    if (styleName == "clear") {
+        sam.SetVoice(ESP8266SAM::VOICE_SAM);
+        speed = 61;
+        pitch = 56;
+        mouth = 150;
+        throat = 110;
+    } else if (styleName == "bright") {
+        sam.SetVoice(ESP8266SAM::VOICE_ELF);
+        speed = 62;
+        pitch = 58;
+        mouth = 146;
+        throat = 116;
+    } else if (styleName == "deep") {
+        sam.SetVoice(ESP8266SAM::VOICE_SAM);
+        speed = 56;
+        pitch = 46;
+        mouth = 126;
+        throat = 140;
+    } else if (styleName == "warm") {
+        sam.SetVoice(ESP8266SAM::VOICE_OLDLADY);
+        speed = 57;
+        pitch = 49;
+        mouth = 132;
+        throat = 124;
+    } else {
+        sam.SetVoice(ESP8266SAM::VOICE_OLDLADY);
+    }
+
+    if (emotion == "happy") {
+        speed = static_cast<uint8_t>(speed + 3);
+        pitch = static_cast<uint8_t>(pitch + 3);
+    } else if (emotion == "curious") {
+        speed = static_cast<uint8_t>(speed + 2);
+        pitch = static_cast<uint8_t>(pitch + 2);
+    } else if (emotion == "warning" || emotion == "surprised") {
+        speed = static_cast<uint8_t>(speed + 2);
+        pitch = static_cast<uint8_t>(pitch > 3 ? pitch - 3 : pitch);
+    } else if (emotion == "sleepy") {
+        speed = static_cast<uint8_t>(speed > 5 ? speed - 5 : speed);
+        pitch = static_cast<uint8_t>(pitch > 4 ? pitch - 4 : pitch);
+    }
+
+    sam.SetSpeed(speed);
+    sam.SetPitch(pitch);
+    sam.SetMouth(mouth);
+    sam.SetThroat(throat);
+
+    yield();
+    const bool speechOk = sam.Say(&audioOut, request.text);
+    yield();
+
+    if (!speechOk) {
+        Serial.println("[AudioOutput] SAM speech failed, falling back to tone");
+        owner->playEmotionTone(emotion);
+    } else {
+        const unsigned long elapsedMs = millis() - startMs;
+        Serial.printf("[AudioOutput] TTS end (%lu ms)\n", static_cast<unsigned long>(elapsedMs));
+        if (elapsedMs > kTtsLongSpeechWarnMs) {
+            Serial.printf("[AudioOutput] Warning: TTS ran long (%lu ms)\n", static_cast<unsigned long>(elapsedMs));
+        }
+    }
+
+    audioOut.stop();
+    gTtsBusy = false;
+}
+
+void ttsWorkerTask(void* parameter) {
+    auto* owner = static_cast<AudioOutput*>(parameter);
+    TtsRequest request{};
+    for (;;) {
+        if (gTtsQueue != nullptr && xQueueReceive(gTtsQueue, &request, portMAX_DELAY) == pdTRUE) {
+            processSpeechRequest(owner, request);
+        }
+    }
+}
+
 }  // namespace
 
 bool AudioOutput::begin() {
@@ -99,7 +220,23 @@ bool AudioOutput::begin() {
     }
 
     M5.Speaker.setVolume(clampVolume(volume_));
+
+    if (gTtsQueue == nullptr) {
+        gTtsQueue = xQueueCreate(2, sizeof(TtsRequest));
+    }
+    if (gTtsTask == nullptr && gTtsQueue != nullptr) {
+        xTaskCreatePinnedToCore(ttsWorkerTask, "tts_task", kTtsTaskStackWords, this, kTtsTaskPriority, &gTtsTask, 0);
+    }
+
+    if (gTtsQueue == nullptr || gTtsTask == nullptr) {
+        Serial.println("[AudioOutput] TTS worker unavailable; speakTTS will be dropped");
+    }
+
     return true;
+}
+
+bool AudioOutput::isSpeaking() const {
+    return gTtsBusy;
 }
 
 void AudioOutput::setVolume(uint8_t volume) {
@@ -160,14 +297,9 @@ void AudioOutput::speakTTS(const String& msg, const String& emotion, const Strin
         return;
     }
 
-    Serial.printf("[AudioOutput] Speaking: %s (emotion: %s, lang: %s, style: %s)\n",
-                  msg.c_str(), emotion.c_str(), lang.c_str(), voiceStyleName().c_str());
-
-    isSpeaking_ = true;
     String speechText = sanitizeSpeechText(msg);
     if (speechText.length() == 0) {
         playEmotionTone(emotion);
-        isSpeaking_ = false;
         return;
     }
 
@@ -175,83 +307,24 @@ void AudioOutput::speakTTS(const String& msg, const String& emotion, const Strin
         speechText += ".";
     }
 
-    // Create AudioOutput adapter for ESP8266SAM
-    AudioOutputM5Speaker audioOut(&M5.Speaker, 0);
-    if (!audioOut.begin()) {
-        Serial.println("[AudioOutput] Failed to initialize audio output");
-        playEmotionTone(emotion);
-        isSpeaking_ = false;
+    if (gTtsQueue == nullptr || gTtsTask == nullptr) {
+        Serial.println("[AudioOutput] TTS worker unavailable; dropping request");
         return;
     }
 
-    ESP8266SAM sam;
+    TtsRequest request{};
+    snprintf(request.text, sizeof(request.text), "%s", speechText.c_str());
+    snprintf(request.emotion, sizeof(request.emotion), "%s", emotion.c_str());
+    snprintf(request.lang, sizeof(request.lang), "%s", lang.c_str());
+    request.queuedAtMs = millis();
 
-    uint8_t speed = 58;
-    uint8_t pitch = 50;
-    uint8_t mouth = 138;
-    uint8_t throat = 118;
-
-    if (voiceStyle_ == VoiceStyle::Clear) {
-        sam.SetVoice(ESP8266SAM::VOICE_SAM);
-        speed = 61;
-        pitch = 56;
-        mouth = 150;
-        throat = 110;
-    } else if (voiceStyle_ == VoiceStyle::Bright) {
-        sam.SetVoice(ESP8266SAM::VOICE_ELF);
-        speed = 62;
-        pitch = 58;
-        mouth = 146;
-        throat = 116;
-    } else if (voiceStyle_ == VoiceStyle::Deep) {
-        sam.SetVoice(ESP8266SAM::VOICE_SAM);
-        speed = 56;
-        pitch = 46;
-        mouth = 126;
-        throat = 140;
-    } else if (voiceStyle_ == VoiceStyle::Warm) {
-        sam.SetVoice(ESP8266SAM::VOICE_OLDLADY);
-        speed = 57;
-        pitch = 49;
-        mouth = 132;
-        throat = 124;
-    } else {
-        sam.SetVoice(ESP8266SAM::VOICE_OLDLADY);
+    if (xQueueSend(gTtsQueue, &request, kTtsQueueWaitMs) != pdTRUE) {
+        Serial.println("[AudioOutput] TTS queue full, dropping request");
+        return;
     }
 
-    // Gentle emotion variation (keep style baseline)
-    if (emotion == "happy") {
-        speed = static_cast<uint8_t>(speed + 3);
-        pitch = static_cast<uint8_t>(pitch + 3);
-    } else if (emotion == "curious") {
-        speed = static_cast<uint8_t>(speed + 2);
-        pitch = static_cast<uint8_t>(pitch + 2);
-    } else if (emotion == "warning" || emotion == "surprised") {
-        speed = static_cast<uint8_t>(speed + 2);
-        pitch = static_cast<uint8_t>(pitch > 3 ? pitch - 3 : pitch);
-    } else if (emotion == "sleepy") {
-        speed = static_cast<uint8_t>(speed > 5 ? speed - 5 : speed);
-        pitch = static_cast<uint8_t>(pitch > 4 ? pitch - 4 : pitch);
-    }
-
-    sam.SetSpeed(speed);
-    sam.SetPitch(pitch);
-    sam.SetMouth(mouth);
-    sam.SetThroat(throat);
-
-    yield();
-    const bool speechOk = sam.Say(&audioOut, speechText.c_str());
-    yield();
-
-    if (!speechOk) {
-        Serial.println("[AudioOutput] SAM speech failed, falling back to tone");
-        playEmotionTone(emotion);
-    } else {
-        Serial.println("[AudioOutput] SAM speech complete");
-    }
-
-    audioOut.stop();
-    isSpeaking_ = false;
+    Serial.printf("[AudioOutput] TTS queued: %s (emotion: %s, lang: %s, style: %s)\n",
+                  request.text, request.emotion, request.lang, voiceStyleName().c_str());
 }
 
 void AudioOutput::playEmotionTone(const String& emotion) {

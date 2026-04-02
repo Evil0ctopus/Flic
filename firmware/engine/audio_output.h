@@ -14,7 +14,7 @@ public:
     void playEmotionTone(const String& emotion);
     void playCreatureSound(const String& sound);
     void update();  // For streaming audio playback
-    bool isSpeaking() const { return isSpeaking_; }
+    bool isSpeaking() const;
 
 private:
     enum class VoiceStyle : uint8_t {
@@ -26,7 +26,6 @@ private:
     };
 
     uint8_t volume_ = 180;
-    bool isSpeaking_ = false;
     VoiceStyle voiceStyle_ = VoiceStyle::Natural;
 };
 
