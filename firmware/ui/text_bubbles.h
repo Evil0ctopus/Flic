@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Arduino.h>
+#include <math.h>
 
 namespace Flic {
 
@@ -28,6 +29,8 @@ private:
     unsigned long showStartMs_ = 0;
     unsigned long showDurationMs_ = 0;
     bool visible_ = false;
+    bool dirty_ = false;
+    float lastDrawScale_ = -1.0f;
     bool hasPreviousBubble_ = false;
     int previousBubbleX_ = 0;
     int previousBubbleY_ = 0;

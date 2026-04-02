@@ -97,7 +97,7 @@ constexpr unsigned long kWebHeartbeatMs = 1000;
 constexpr bool kEmergencyMinimalLoop = false;
 constexpr bool kDisableVoiceRuntime = true;
 constexpr bool kDisableVoiceInputHandling = true;
-constexpr bool kDisableImuEngine = true;
+constexpr bool kDisableImuEngine = false;
 constexpr bool kEnableUsbRuntime = true;
 
 unsigned long lastLoopMs = 0;

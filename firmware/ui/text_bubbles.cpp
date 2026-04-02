@@ -4,30 +4,31 @@
 
 namespace Flic {
 
+namespace {
+constexpr bool kEnableBubbleScaleAnimation = true;
+}
+
 bool TextBubbles::begin() {
     visible_ = false;
     showStartMs_ = 0;
     showDurationMs_ = 0;
+    dirty_ = false;
+    lastDrawScale_ = -1.0f;
     hasPreviousBubble_ = false;
     return true;
 }
 
 void TextBubbles::showMessage(const String& msg, BubbleSize size, const String& emotion) {
     if (visible_ && msg == message_) {
-        showStartMs_ = millis();
-
-        const unsigned long base = 900;
-        const unsigned long perChar = 45;
-        unsigned long sizeExtra = 0;
-        if (size == BubbleSize::Medium) {
-            sizeExtra = 250;
-        } else if (size == BubbleSize::Large) {
-            sizeExtra = 450;
-        }
-
-        showDurationMs_ = base + perChar * static_cast<unsigned long>(msg.length()) + sizeExtra;
-        if (showDurationMs_ > 7000) {
-            showDurationMs_ = 7000;
+        const unsigned long now = millis();
+        const unsigned long elapsed = now - showStartMs_;
+        const unsigned long keepAliveMs = 700;
+        const unsigned long targetDuration = elapsed + keepAliveMs;
+        if (targetDuration > showDurationMs_) {
+            showDurationMs_ = targetDuration;
+            if (showDurationMs_ > 7000) {
+                showDurationMs_ = 7000;
+            }
         }
         return;
     }
@@ -52,6 +53,8 @@ void TextBubbles::showMessage(const String& msg, BubbleSize size, const String& 
     }
 
     visible_ = true;
+    dirty_ = true;
+    lastDrawScale_ = -1.0f;
 }
 
 void TextBubbles::update() {
@@ -64,28 +67,39 @@ void TextBubbles::update() {
     if (elapsed >= showDurationMs_) {
         clearPreviousBubble();
         visible_ = false;
+        dirty_ = false;
+        lastDrawScale_ = -1.0f;
         return;
     }
 
-    const unsigned long popInMs = 170;
-    const unsigned long popOutMs = 220;
     float scale = 1.0f;
-    if (elapsed < popInMs) {
-        scale = static_cast<float>(elapsed) / static_cast<float>(popInMs);
-        if (scale < 0.15f) {
-            scale = 0.15f;
+    if (kEnableBubbleScaleAnimation) {
+        const unsigned long popInMs = 170;
+        const unsigned long popOutMs = 220;
+        if (elapsed < popInMs) {
+            scale = static_cast<float>(elapsed) / static_cast<float>(popInMs);
+            if (scale < 0.15f) {
+                scale = 0.15f;
+            }
+        } else if (showDurationMs_ - elapsed < popOutMs) {
+            scale = static_cast<float>(showDurationMs_ - elapsed) / static_cast<float>(popOutMs);
+            if (scale < 0.15f) {
+                scale = 0.15f;
+            }
         }
-    } else if (showDurationMs_ - elapsed < popOutMs) {
-        scale = static_cast<float>(showDurationMs_ - elapsed) / static_cast<float>(popOutMs);
-        if (scale < 0.15f) {
-            scale = 0.15f;
-        }
+    }
+
+    const bool shouldDraw = dirty_ || lastDrawScale_ < 0.0f || fabsf(scale - lastDrawScale_) >= 0.08f;
+    if (!shouldDraw) {
+        return;
     }
 
     uint16_t bgColor = TFT_DARKGREY;
     uint16_t fgColor = TFT_WHITE;
     resolveTheme(emotion_, bgColor, fgColor);
     drawBubble(scale, bgColor, fgColor);
+    dirty_ = false;
+    lastDrawScale_ = scale;
 }
 
 bool TextBubbles::isVisible() const {
@@ -268,6 +282,8 @@ void TextBubbles::clearPreviousBubble() {
     display.endWrite();
 
     hasPreviousBubble_ = false;
+    dirty_ = false;
+    lastDrawScale_ = -1.0f;
 }
 
 void TextBubbles::resolveTheme(const String& emotion, uint16_t& bgColor, uint16_t& fgColor) const {
