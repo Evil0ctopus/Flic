@@ -1,4 +1,6 @@
 {
+  "_schema": "flic.personality_seed.v1",
+  "_updated_at": 0,
   "curiosity": 0.2,
   "calm": 0.8,
   "surprise": 0.1,

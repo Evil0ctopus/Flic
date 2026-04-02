@@ -1,0 +1,125 @@
+:root {
+  --bg: #101319;
+  --card: #1a1f29;
+  --text: #e7edf8;
+  --muted: #9fb0cc;
+  --ok: #3ddc97;
+  --warn: #ffcc66;
+  --off: #6c778a;
+  --accent: #61a8ff;
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: Inter, Segoe UI, Arial, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  border-bottom: 1px solid #2a3140;
+}
+
+h1, h2 { margin: 0 0 10px 0; }
+h1 { font-size: 18px; }
+h2 { font-size: 15px; color: var(--muted); }
+
+.conn { display: flex; align-items: center; gap: 8px; }
+.dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+}
+.dot.on { background: var(--ok); }
+.dot.off { background: #ff6b6b; }
+
+button {
+  background: #243047;
+  color: var(--text);
+  border: 1px solid #3a4a68;
+  border-radius: 6px;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+button:hover { background: #2f3e5b; }
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(260px, 1fr));
+  gap: 12px;
+  padding: 12px;
+}
+
+.card {
+  background: var(--card);
+  border: 1px solid #2a3140;
+  border-radius: 10px;
+  padding: 12px;
+}
+
+.span-2 { grid-column: span 2; }
+
+.status-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(120px, 1fr));
+  gap: 8px;
+}
+
+.status {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+  color: var(--muted);
+  border: 1px solid #2f3748;
+  border-radius: 8px;
+  padding: 6px 8px;
+}
+
+.badge {
+  font-size: 11px;
+  border-radius: 10px;
+  padding: 2px 6px;
+  color: #000;
+  font-weight: 600;
+}
+.badge.on { background: var(--ok); }
+.badge.off { background: var(--off); color: #fff; }
+
+.kv {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+  padding: 4px 0;
+  border-bottom: 1px dashed #2b3448;
+}
+.kv span { color: var(--muted); }
+.kv strong { color: var(--text); }
+
+label {
+  display: block;
+  margin: 8px 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.console {
+  margin: 0;
+  min-height: 220px;
+  max-height: 320px;
+  overflow: auto;
+  background: #0a0d13;
+  color: #d7f5d7;
+  border: 1px solid #263043;
+  border-radius: 8px;
+  padding: 10px;
+  font-size: 12px;
+  line-height: 1.35;
+}

@@ -1,5 +1,6 @@
 #include "animation_engine.h"
 
+#include "../diagnostics/webui_event_hook.h"
 #include "../subsystems/sd_manager.h"
 
 #include <ArduinoJson.h>
@@ -13,6 +14,17 @@ namespace {
 constexpr const char* kAnimationRoot = "/ai/animations";
 constexpr uint16_t kMinimumFps = 10;
 constexpr uint16_t kMaximumFps = 20;
+constexpr float kMinimumPlaybackSpeed = 0.25f;
+constexpr float kMaximumPlaybackSpeed = 4.0f;
+
+bool endsWithJson(const String& value) {
+    return value.endsWith(".json");
+}
+
+String toLowerCopy(String value) {
+    value.toLowerCase();
+    return value;
+}
 
 struct Pixel {
     int16_t x;
@@ -112,6 +124,15 @@ bool AnimationEngine::begin() {
     return SdManager::isMounted() && SD.exists(kAnimationRoot);
 }
 
+void AnimationEngine::setPlaybackSpeed(float speed) {
+    if (speed < kMinimumPlaybackSpeed) {
+        speed = kMinimumPlaybackSpeed;
+    } else if (speed > kMaximumPlaybackSpeed) {
+        speed = kMaximumPlaybackSpeed;
+    }
+    playbackSpeed_ = speed;
+}
+
 bool AnimationEngine::hasRealAnimations() const {
     File root = SD.open(kAnimationRoot);
     if (!root || !root.isDirectory()) {
@@ -158,6 +179,85 @@ bool AnimationEngine::playAnimation(const char* fileName) {
     return renderAnimationFile(path);
 }
 
+bool AnimationEngine::playPreset(const String& preset) {
+    WebUiEventHook::emit("animation", String("{\"kind\":\"preset\",\"value\":\"") + preset + "\"}");
+    String key = toLowerCopy(preset);
+    if (key.length() == 0) {
+        return false;
+    }
+
+    if (endsWithJson(key)) {
+        return playAnimation(key.c_str());
+    }
+
+    if (key == "blink") {
+        return playAnimation("blink.json");
+    }
+
+    if (key == "idle" || key == "idle_breathing") {
+        return playAnimation("idle_breathing.json");
+    }
+
+    if (key == "happy_wiggle" || key == "wiggle") {
+        return playAnimation("happy_wiggle.json");
+    }
+
+    if (key == "sleepy_fade" || key == "fade") {
+        return playAnimation("sleepy_fade.json");
+    }
+
+    if (key == "surprise" || key == "surprised") {
+        return playAnimation("surprise.json");
+    }
+
+    if (key == "thinking" || key == "thinking_loop") {
+        return playAnimation("thinking_loop.json");
+    }
+
+    if (key.startsWith("micro_")) {
+        return playAnimation((key + ".json").c_str());
+    }
+
+    String candidate = key + ".json";
+    return playAnimation(candidate.c_str());
+}
+
+bool AnimationEngine::playEmotionCue(const String& emotion) {
+    WebUiEventHook::emit("animation", String("{\"kind\":\"emotion_cue\",\"value\":\"") + emotion + "\"}");
+    String key = toLowerCopy(emotion);
+    if (key == "calm") {
+        return playPreset("idle_breathing");
+    }
+    if (key == "curious") {
+        return playPreset("thinking_loop");
+    }
+    if (key == "happy") {
+        return playPreset("happy_wiggle");
+    }
+    if (key == "sleepy") {
+        return playPreset("sleepy_fade");
+    }
+    if (key == "surprised" || key == "warning" || key == "surprise") {
+        return playPreset("surprise");
+    }
+
+    return playPreset(key);
+}
+
+bool AnimationEngine::playMicroGesture(const String& gesture) {
+    WebUiEventHook::emit("animation", String("{\"kind\":\"micro\",\"value\":\"") + gesture + "\"}");
+    String key = toLowerCopy(gesture);
+    if (key.length() == 0) {
+        return false;
+    }
+
+    if (key.startsWith("micro_")) {
+        return playPreset(key);
+    }
+
+    return playPreset(String("micro_") + key);
+}
+
 bool AnimationEngine::generateFirstAnimationIfNeeded() {
     if (hasRealAnimations()) {
         return true;
@@ -196,8 +296,12 @@ bool AnimationEngine::renderAnimationFile(const String& filePath) {
     }
 
     auto& display = M5.Display;
-    const uint32_t frameInterval = 1000U / animation.fps;
+    const float speed = playbackSpeed_ < kMinimumPlaybackSpeed ? kMinimumPlaybackSpeed : playbackSpeed_;
+    const uint32_t frameInterval = static_cast<uint32_t>((1000.0f / animation.fps) / speed);
     isPlaying_ = true;
+    WebUiEventHook::emit("animation", String("{\"kind\":\"start\",\"name\":\"") + animation.name +
+                                         "\",\"fps\":" + animation.fps + ",\"frames\":" +
+                                         static_cast<uint32_t>(animation.frames.size()) + "}");
     for (const Frame& frame : animation.frames) {
         display.startWrite();
         display.fillScreen(TFT_BLACK);
@@ -206,10 +310,11 @@ bool AnimationEngine::renderAnimationFile(const String& filePath) {
         }
         display.endWrite();
 
-        const uint32_t delayMs = frame.durationMs > 0 ? frame.durationMs : frameInterval;
+        const uint32_t delayMs = frame.durationMs > 0 ? static_cast<uint32_t>(frame.durationMs / speed) : frameInterval;
         delay(delayMs);
     }
     isPlaying_ = false;
+    WebUiEventHook::emit("animation", String("{\"kind\":\"end\",\"name\":\"") + animation.name + "\"}");
 
     return true;
 }

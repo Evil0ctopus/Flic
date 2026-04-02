@@ -13,6 +13,7 @@ public:
 
 private:
     TouchInput* touchInput_ = nullptr;
+    unsigned long lastFallbackMs_ = 0;
 };
 
 }  // namespace Flic

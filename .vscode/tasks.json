@@ -1,35 +1,92 @@
 {
-  "version": "2.0.0",
-  "tasks": [
-    {
-      "label": "PlatformIO: Build",
-      "type": "shell",
-      "command": "python",
-      "args": ["-m", "platformio", "run"],
-      "group": "build",
-      "problemMatcher": []
-    },
-    {
-      "label": "PlatformIO: Upload",
-      "type": "shell",
-      "command": "python",
-      "args": ["-m", "platformio", "run", "--target", "upload"],
-      "group": "build",
-      "problemMatcher": []
-    },
-    {
-      "label": "PlatformIO: Monitor",
-      "type": "shell",
-      "command": "python",
-      "args": ["-m", "platformio", "device", "monitor", "--baud", "115200"],
-      "problemMatcher": []
-    },
-    {
-      "label": "Generate First Animation",
-      "type": "shell",
-      "command": "python",
-      "args": ["ai/scripts/generate_first_animation.py"],
-      "problemMatcher": []
-    }
-  ]
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "PlatformIO: Build",
+			"type": "shell",
+			"command": "python",
+			"args": [
+				"-m",
+				"platformio",
+				"run"
+			],
+			"group": "build",
+			"problemMatcher": []
+		},
+		{
+			"label": "PlatformIO: Upload",
+			"type": "shell",
+			"command": "python",
+			"args": [
+				"-m",
+				"platformio",
+				"run",
+				"--target",
+				"upload"
+			],
+			"group": "build",
+			"problemMatcher": []
+		},
+		{
+			"label": "PlatformIO: Monitor",
+			"type": "shell",
+			"command": "python",
+			"args": [
+				"-m",
+				"platformio",
+				"device",
+				"monitor",
+				"--baud",
+				"115200"
+			],
+			"problemMatcher": []
+		},
+		{
+			"label": "Generate First Animation",
+			"type": "shell",
+			"command": "python",
+			"args": [
+				"ai/scripts/generate_first_animation.py"
+			],
+			"problemMatcher": []
+		},
+		{
+			"label": "Decode Addresses",
+			"type": "shell",
+			"command": "python",
+			"args": [
+				"-c",
+				"import pathlib, subprocess; root=pathlib.Path(r'C:\\\\Users\\\\jlors\\\\OneDrive\\\\Desktop\\\\Flic'); elf=root/'.pio/build/m5cores3/firmware.elf'; tool=next(root.glob('.pio/packages/**/xtensa-esp32s3-elf-addr2line.exe')); addrs=['0x42017e57','0x42019628','0x42013fb0','0x4206611a','0x4037bb67']; print(subprocess.check_output([str(tool),'-pfiaC','-e',str(elf),*addrs], text=True, errors='replace'))"
+			],
+			"group": "build"
+		},
+		{
+			"label": "Decode Addresses",
+			"type": "shell",
+			"command": "python",
+			"args": [
+				"-c",
+				"import pathlib, subprocess; root=pathlib.Path(r\"C:\\\\Users\\\\jlors\\\\OneDrive\\\\Desktop\\\\Flic\"); elf=root/\".pio/build/m5cores3/firmware.elf\"; tool=next(root.glob(\".pio/packages/**/xtensa-esp32s3-elf-addr2line.exe\")); addrs=[\"0x42017e57\",\"0x42019628\",\"0x42013fb0\",\"0x4206611a\",\"0x4037bb67\"]; print(subprocess.check_output([str(tool),\"-pfiaC\",\"-e\",str(elf),*addrs], text=True, errors=\"replace\"))"
+			],
+			"group": "build"
+		},
+		{
+			"label": "Decode Addresses Script",
+			"type": "shell",
+			"command": "python",
+			"args": [
+				"ai/scripts/tmp_decode_addrs.py"
+			],
+			"group": "build"
+		},
+		{
+			"label": "Decode Addresses Script",
+			"type": "shell",
+			"command": "python",
+			"args": [
+				"ai/scripts/tmp_decode_addrs.py"
+			],
+			"group": "build"
+		}
+	]
 }

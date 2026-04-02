@@ -12,6 +12,8 @@ public:
 
 private:
     unsigned long lastSampleMs_ = 0;
+    unsigned long lastEventMs_ = 0;
+    uint8_t stillnessStreak_ = 0;
     bool hasEvent_ = false;
     String event_;
     String detail_;

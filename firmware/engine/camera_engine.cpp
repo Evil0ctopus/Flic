@@ -6,28 +6,44 @@ namespace Flic {
 
 bool CameraEngine::begin() {
     lastProbeMs_ = millis();
+    lastEventMs_ = 0;
     hasEvent_ = false;
     lastTouchActive_ = false;
+    // CoreS3 Lite profile has no onboard camera driver in this firmware; keep safe proxy mode.
+    cameraAvailable_ = false;
     return true;
 }
 
 void CameraEngine::update() {
     const unsigned long now = millis();
-    if (now - lastProbeMs_ < 500) {
+    if (now - lastProbeMs_ < 160) {
         return;
     }
     lastProbeMs_ = now;
 
-    // Camera features are optional on this firmware profile.
-    // Use edge-triggered proxy only when activity starts.
+    // Camera features are optional on CoreS3 Lite.
+    // Use edge-triggered sensor proxy only when activity starts.
     const bool touchActive = M5.Touch.getCount() > 0;
-    if (touchActive && !lastTouchActive_) {
+    if (touchActive && !lastTouchActive_ && (now - lastEventMs_) > 1100) {
         hasEvent_ = true;
         event_ = "motion";
-        detail_ = "proxy_activity_start";
+        detail_ = cameraAvailable_ ? "camera_activity_start" : "proxy_touch_activity_start";
+        lastEventMs_ = now;
+    }
+
+    // Optional IMU-assisted motion proxy when touch is idle.
+    if (!touchActive && M5.Imu.isEnabled() && (now - lastEventMs_) > 1400) {
+        float gx = 0.0f, gy = 0.0f, gz = 0.0f;
+        M5.Imu.getGyro(&gx, &gy, &gz);
+        const float gyroMotion = fabsf(gx) + fabsf(gy) + fabsf(gz);
+        if (gyroMotion > 1.6f) {
+            hasEvent_ = true;
+            event_ = "motion";
+            detail_ = "proxy_imu_motion";
+            lastEventMs_ = now;
+        }
     }
     lastTouchActive_ = touchActive;
-
 }
 
 bool CameraEngine::popEvent(String& eventOut, String& detailOut) {

@@ -12,6 +12,8 @@ public:
 
 private:
     unsigned long lastProbeMs_ = 0;
+    unsigned long lastEventMs_ = 0;
+    bool cameraAvailable_ = false;
     bool hasEvent_ = false;
     bool lastTouchActive_ = false;
     String event_;

@@ -1,0 +1,34 @@
+{
+  "name": "surprise",
+  "fps": 12,
+  "frames": [
+    {
+      "duration": 70,
+      "pixels": [
+        {"x": 118, "y": 116, "color": "#FFFFFF"},
+        {"x": 120, "y": 112, "color": "#FFFFFF"},
+        {"x": 122, "y": 116, "color": "#FFFFFF"}
+      ]
+    },
+    {
+      "duration": 90,
+      "pixels": [
+        {"x": 114, "y": 114, "color": "#C0FFFF"},
+        {"x": 118, "y": 110, "color": "#FFFFFF"},
+        {"x": 120, "y": 116, "color": "#FFFFA0"},
+        {"x": 122, "y": 110, "color": "#FFFFFF"},
+        {"x": 126, "y": 114, "color": "#C0FFFF"}
+      ]
+    },
+    {
+      "duration": 110,
+      "pixels": [
+        {"x": 112, "y": 112, "color": "#FFFFFF"},
+        {"x": 116, "y": 116, "color": "#D0FFFF"},
+        {"x": 120, "y": 110, "color": "#FFFFFF"},
+        {"x": 124, "y": 116, "color": "#D0FFFF"},
+        {"x": 128, "y": 112, "color": "#FFFFFF"}
+      ]
+    }
+  ]
+}

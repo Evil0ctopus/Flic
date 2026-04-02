@@ -35,8 +35,8 @@ void VoiceEngine::speak(const String& msg, const String& emotion) {
     if (output_ == nullptr) {
         return;
     }
-    output_->speakTTS(msg);
-    output_->playEmotionTone(emotion);
+    // Speak with full TTS using emotion context
+    output_->speakTTS(msg, emotion, "en");
 }
 
 }  // namespace Flic

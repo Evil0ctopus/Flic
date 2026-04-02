@@ -1,3 +1,9 @@
 {
+  "_schema": "flic.device_patterns.v1",
+  "_updated_at": 0,
+  "summary": {
+    "devices_with_patterns": 0,
+    "learned_patterns": 0
+  },
   "devices": []
 }

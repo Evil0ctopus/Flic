@@ -13,6 +13,9 @@ constexpr int kSdClockPin = 36;
 constexpr int kSdMosiPin = 35;
 constexpr int kSdMisoPin = 37;
 constexpr gpio_num_t kSdChipSelectPin = GPIO_NUM_4;
+constexpr const char* kAiRootDir = "/ai";
+constexpr const char* kAiMemoryDir = "/ai/memory";
+constexpr const char* kAiAnimationsDir = "/ai/animations";
 
 bool gMounted = false;
 }  // namespace
@@ -42,6 +45,10 @@ bool mount() {
         gMounted = false;
         return false;
     }
+
+    SD.mkdir(kAiRootDir);
+    SD.mkdir(kAiMemoryDir);
+    SD.mkdir(kAiAnimationsDir);
 
     Serial.println("Flic: SD card mounted.");
     gMounted = true;
@@ -98,7 +105,9 @@ bool writeJSON(const char* path, const JsonDocument& document) {
         return false;
     }
 
-    SD.remove(path);
+    if (SD.exists(path)) {
+        SD.remove(path);
+    }
     File file = SD.open(path, FILE_WRITE);
     if (!file) {
         return false;

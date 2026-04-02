@@ -1,3 +1,11 @@
 {
+  "_schema": "flic.proposals.v1",
+  "_updated_at": 0,
+  "queue": {
+    "pending": 0,
+    "approved": 0,
+    "rejected": 0,
+    "sent": 0
+  },
   "proposals": []
 }

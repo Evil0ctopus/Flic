@@ -82,7 +82,7 @@ bool DeviceLearning::processMessage(const String& deviceId, const String& messag
         }
     }
 
-    learnedSomething_ = kind != "unknown" && kind != "binary";
+    learnedSomething_ = (kind != "unknown" && kind != "binary" && observedCount <= 1);
     savePatterns();
     return learnedSomething_;
 }
@@ -255,7 +255,7 @@ String DeviceLearning::classifyMessage(const String& message) const {
     if (message.startsWith("DEVICE_ID:")) {
         return "identity";
     }
-    if (message.startsWith("CAPABILITIES:")) {
+    if (message.startsWith("CAPABILITIES:") || message.startsWith("CAPS:") || message.startsWith("FEATURES:")) {
         return "capability";
     }
     if (message.startsWith("CMD:")) {

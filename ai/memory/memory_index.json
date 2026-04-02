@@ -1,6 +1,17 @@
 {
+  "_schema": "flic.memory_index.v1",
+  "_updated_at": 0,
   "interaction_timestamps": [],
   "emotional_history": [],
   "animation_events": [],
-  "milestone_unlocks": []
+  "milestone_unlocks": [],
+  "learning_events": [],
+  "learning_counters": {
+    "touch": 0,
+    "voice": 0,
+    "motion": 0,
+    "usb": 0,
+    "total": 0
+  },
+  "usb_observations": []
 }

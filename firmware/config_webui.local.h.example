@@ -1,0 +1,17 @@
+#pragma once
+
+// Copy this file to: firmware/config_webui.local.h
+// Then set your private Wi-Fi credentials.
+// This file is meant to stay uncommitted.
+
+#define FLIC_WEBUI_LOCAL_CONFIG 1
+
+namespace Flic {
+
+constexpr const char* kWebUiSsid = "YOUR_WIFI_SSID";
+constexpr const char* kWebUiPassword = "YOUR_WIFI_PASSWORD";
+
+constexpr uint16_t kWebUiHttpPort = 80;
+constexpr uint16_t kWebUiWsPort = 81;
+
+}  // namespace Flic

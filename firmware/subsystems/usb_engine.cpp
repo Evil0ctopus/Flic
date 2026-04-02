@@ -9,6 +9,40 @@ namespace Flic {
 namespace {
 constexpr const char* kPermissionsPath = "/permissions.json";
 constexpr const char* kConnectedDevicesPath = "/ai/memory/connected_devices.json";
+constexpr const char* kDeviceIdPrefix = "DEVICE_ID:";
+constexpr size_t kDeviceIdPrefixLength = 10;
+constexpr const char* kDeviceTypePrefix = "DEVICE_TYPE:";
+constexpr size_t kDeviceTypePrefixLength = 12;
+constexpr const char* kCapabilitiesPrefix = "CAPABILITIES:";
+constexpr size_t kCapabilitiesPrefixLength = 13;
+constexpr const char* kCapsShortPrefix = "CAPS:";
+constexpr size_t kCapsShortPrefixLength = 5;
+constexpr const char* kFeaturesPrefix = "FEATURES:";
+constexpr size_t kFeaturesPrefixLength = 9;
+constexpr const char* kBaudPrefix = "BAUD:";
+constexpr size_t kBaudPrefixLength = 5;
+constexpr uint32_t kHelloRetryIntervalMs = 1200;
+
+void appendCapabilities(const String& capabilitiesCsv, JsonArray capabilities) {
+    capabilities.clear();
+    if (capabilitiesCsv.length() == 0) {
+        return;
+    }
+
+    int start = 0;
+    while (start < capabilitiesCsv.length()) {
+        int comma = capabilitiesCsv.indexOf(',', start);
+        if (comma < 0) {
+            comma = capabilitiesCsv.length();
+        }
+        String token = capabilitiesCsv.substring(start, comma);
+        token.trim();
+        if (token.length() > 0) {
+            capabilities.add(token);
+        }
+        start = comma + 1;
+    }
+}
 
 bool isSafeUsbCommand(const String& command) {
     if (command.length() == 0) {
@@ -34,6 +68,8 @@ bool UsbEngine::begin(uint32_t baudRate) {
     connected_ = false;
     connectionJustEstablished_ = false;
     handshakeSent_ = false;
+    handshakeComplete_ = false;
+    lastHelloSentMs_ = 0;
     return true;
 }
 
@@ -42,17 +78,27 @@ bool UsbEngine::deviceConnected() {
     connectionJustEstablished_ = serialConnected && !connected_;
     if (!serialConnected && connected_) {
         handshakeSent_ = false;
+        handshakeComplete_ = false;
+        lastHelloSentMs_ = 0;
+        deviceId_ = String();
+        deviceType_ = "unknown";
+        capabilitiesCsv_ = String();
         readLine_ = String();
     }
     connected_ = serialConnected;
 
     if (connectionJustEstablished_) {
         handshakeSent_ = false;
+        handshakeComplete_ = false;
     }
 
     if (connected_ && !handshakeSent_) {
         sendMessage("FLIC_HELLO");
         handshakeSent_ = true;
+        lastHelloSentMs_ = millis();
+    } else if (connected_ && !handshakeComplete_ && (millis() - lastHelloSentMs_ >= kHelloRetryIntervalMs)) {
+        sendMessage("FLIC_HELLO");
+        lastHelloSentMs_ = millis();
     }
 
     return connected_;
@@ -120,24 +166,24 @@ String UsbEngine::readMessage() {
             readLine_ = String();
             message.trim();
 
-            if (message.startsWith("DEVICE_ID:")) {
-                deviceId_ = message.substring(10);
+            if (markHandshakeFromMessage(message)) {
+                return String();
+            } else if (message.startsWith(kDeviceIdPrefix)) {
+                deviceId_ = message.substring(kDeviceIdPrefixLength);
                 deviceId_.trim();
                 if (deviceId_.length() > 0) {
                     deviceType_ = deviceId_;
                     saveConnectedDevice(deviceId_, deviceType_, capabilitiesCsv_);
                 }
-            } else if (message.startsWith("DEVICE_TYPE:")) {
-                deviceType_ = message.substring(12);
+            } else if (message.startsWith(kDeviceTypePrefix)) {
+                deviceType_ = message.substring(kDeviceTypePrefixLength);
                 deviceType_.trim();
-            } else if (message.startsWith("CAPABILITIES:")) {
-                capabilitiesCsv_ = message.substring(13);
-                capabilitiesCsv_.trim();
+            } else if (parseCapabilitiesFromMessage(message, capabilitiesCsv_)) {
                 if (deviceId_.length() > 0) {
                     saveConnectedDevice(deviceId_, deviceType_, capabilitiesCsv_);
                 }
-            } else if (message.startsWith("BAUD:")) {
-                const uint32_t requestedBaud = static_cast<uint32_t>(message.substring(5).toInt());
+            } else if (message.startsWith(kBaudPrefix)) {
+                const uint32_t requestedBaud = static_cast<uint32_t>(message.substring(kBaudPrefixLength).toInt());
                 negotiateBaudRate(requestedBaud);
             }
 
@@ -162,6 +208,10 @@ String UsbEngine::connectedCapabilitiesCsv() const {
 
 bool UsbEngine::canSendCommand(const String& command) const {
     if (!connected_ || command.length() == 0) {
+        return false;
+    }
+
+    if (!isHandshakeMessage(command) && (!handshakeComplete_ || deviceId_.length() == 0)) {
         return false;
     }
 
@@ -198,7 +248,40 @@ void UsbEngine::loadPermissions() {
 }
 
 bool UsbEngine::isHandshakeMessage(const String& message) const {
-    return message == "FLIC_HELLO" || message.startsWith("DEVICE_ID:") || message.startsWith("USB_PING");
+    return message == "FLIC_HELLO" || message == "HELLO" || message == "HELLO_ACK" ||
+           message == "FLIC_HELLO_ACK" || message.startsWith(kDeviceIdPrefix) ||
+           message.startsWith(kDeviceTypePrefix) || message.startsWith(kCapabilitiesPrefix) ||
+           message.startsWith(kCapsShortPrefix) || message.startsWith(kFeaturesPrefix) ||
+           message.startsWith("USB_PING") || message.startsWith("USB_PONG") || message.startsWith(kBaudPrefix);
+}
+
+bool UsbEngine::markHandshakeFromMessage(const String& message) {
+    if (message == "HELLO" || message == "HELLO_ACK" || message == "FLIC_HELLO" ||
+        message == "FLIC_HELLO_ACK" || message == "USB_PONG" || message == "USB_PING") {
+        handshakeComplete_ = true;
+        return true;
+    }
+
+    if (message.startsWith(kDeviceIdPrefix)) {
+        handshakeComplete_ = true;
+    }
+
+    return false;
+}
+
+bool UsbEngine::parseCapabilitiesFromMessage(const String& message, String& outCsv) const {
+    if (message.startsWith(kCapabilitiesPrefix)) {
+        outCsv = message.substring(kCapabilitiesPrefixLength);
+    } else if (message.startsWith(kCapsShortPrefix)) {
+        outCsv = message.substring(kCapsShortPrefixLength);
+    } else if (message.startsWith(kFeaturesPrefix)) {
+        outCsv = message.substring(kFeaturesPrefixLength);
+    } else {
+        return false;
+    }
+
+    outCsv.trim();
+    return true;
 }
 
 bool UsbEngine::isControlAllowed() const {
@@ -212,6 +295,10 @@ bool UsbEngine::isApprovalRequired() const {
 bool UsbEngine::isCommandApproved(const String& deviceId, const String& command) const {
     JsonDocument proposalsDocument;
     if (!SdManager::readJSON("/ai/memory/proposals.json", proposalsDocument)) {
+        return false;
+    }
+
+    if (!proposalsDocument.is<JsonObject>()) {
         return false;
     }
 
@@ -245,6 +332,10 @@ void UsbEngine::saveConnectedDevice(const String& deviceId, const String& device
 
     JsonDocument document;
     SdManager::readJSON(kConnectedDevicesPath, document);
+    if (!document.is<JsonObject>()) {
+        document.clear();
+        document.to<JsonObject>();
+    }
 
     JsonArray devices = document["devices"].to<JsonArray>();
     bool updated = false;
@@ -256,22 +347,7 @@ void UsbEngine::saveConnectedDevice(const String& deviceId, const String& device
             entry["baud_rate"] = baudRate_;
             entry["transport"] = "usb_cdc";
             JsonArray capabilities = entry["capabilities"].to<JsonArray>();
-            capabilities.clear();
-            if (capabilitiesCsv.length() > 0) {
-                int start = 0;
-                while (start < capabilitiesCsv.length()) {
-                    int comma = capabilitiesCsv.indexOf(',', start);
-                    if (comma < 0) {
-                        comma = capabilitiesCsv.length();
-                    }
-                    String token = capabilitiesCsv.substring(start, comma);
-                    token.trim();
-                    if (token.length() > 0) {
-                        capabilities.add(token);
-                    }
-                    start = comma + 1;
-                }
-            }
+            appendCapabilities(capabilitiesCsv, capabilities);
             updated = true;
             break;
         }
@@ -285,21 +361,7 @@ void UsbEngine::saveConnectedDevice(const String& deviceId, const String& device
         entry["baud_rate"] = baudRate_;
         entry["transport"] = "usb_cdc";
         JsonArray capabilities = entry["capabilities"].to<JsonArray>();
-        if (capabilitiesCsv.length() > 0) {
-            int start = 0;
-            while (start < capabilitiesCsv.length()) {
-                int comma = capabilitiesCsv.indexOf(',', start);
-                if (comma < 0) {
-                    comma = capabilitiesCsv.length();
-                }
-                String token = capabilitiesCsv.substring(start, comma);
-                token.trim();
-                if (token.length() > 0) {
-                    capabilities.add(token);
-                }
-                start = comma + 1;
-            }
-        }
+        appendCapabilities(capabilitiesCsv, capabilities);
     }
 
     SdManager::writeJSON(kConnectedDevicesPath, document);

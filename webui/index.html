@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Flic WebUI</title>
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <h1>Flic Runtime Monitor</h1>
+    <div class="conn">
+      <span id="connDot" class="dot off"></span>
+      <span id="connText">Disconnected</span>
+      <button id="btnConnect">Connect</button>
+    </div>
+  </header>
+
+  <main class="grid">
+    <section class="card">
+      <h2>Engine Status</h2>
+      <div id="engineStatus" class="status-grid">
+        <div data-engine="touch" class="status">Touch <span class="badge off">OFF</span></div>
+        <div data-engine="imu" class="status">IMU <span class="badge off">OFF</span></div>
+        <div data-engine="light" class="status">Light <span class="badge off">OFF</span></div>
+        <div data-engine="camera" class="status">Camera <span class="badge off">OFF</span></div>
+        <div data-engine="audio" class="status">Audio <span class="badge off">OFF</span></div>
+        <div data-engine="usb" class="status">USB <span class="badge off">OFF</span></div>
+        <div data-engine="communication" class="status">Communication <span class="badge off">OFF</span></div>
+        <div data-engine="emotion" class="status">Emotion <span class="badge off">OFF</span></div>
+        <div data-engine="animation" class="status">Animation <span class="badge off">OFF</span></div>
+        <div data-engine="milestone" class="status">Milestone <span class="badge off">OFF</span></div>
+        <div data-engine="learning" class="status">Learning <span class="badge off">OFF</span></div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Sensor Readouts</h2>
+      <div class="kv"><span>IMU Event</span><strong id="imuEvent">-</strong></div>
+      <div class="kv"><span>IMU Detail</span><strong id="imuDetail">-</strong></div>
+      <div class="kv"><span>Light Event</span><strong id="lightEvent">-</strong></div>
+      <div class="kv"><span>Light Detail</span><strong id="lightDetail">-</strong></div>
+      <div class="kv"><span>Touch Gesture</span><strong id="touchGesture">-</strong></div>
+      <div class="kv"><span>Touch Meaning</span><strong id="touchMeaning">-</strong></div>
+    </section>
+
+    <section class="card">
+      <h2>State</h2>
+      <div class="kv"><span>Emotion</span><strong id="emotionState">calm</strong></div>
+      <div class="kv"><span>Animation</span><strong id="animationState">idle</strong></div>
+      <div class="kv"><span>Uptime (ms)</span><strong id="uptime">0</strong></div>
+      <div class="kv"><span>Last Update</span><strong id="lastUpdate">-</strong></div>
+    </section>
+
+    <section class="card">
+      <h2>Settings</h2>
+      <label><input id="toggleAutoConnect" type="checkbox" checked /> Auto-connect on load</label>
+      <label><input id="toggleHeartbeat" type="checkbox" checked /> Show heartbeat logs</label>
+      <label><input id="toggleVerbose" type="checkbox" /> Verbose logs</label>
+      <label><input id="toggleMock" type="checkbox" /> Mock data mode</label>
+      <label for="voiceStyleSelect">Voice style</label>
+      <select id="voiceStyleSelect">
+        <option value="natural">Natural</option>
+        <option value="bright">Bright</option>
+        <option value="deep">Deep</option>
+      </select>
+      <button id="btnApplyVoiceStyle">Apply Voice Style</button>
+      <div class="kv"><span>Voice Style Status</span><strong id="voiceStyleStatus">idle</strong></div>
+      <button id="btnClearLogs">Clear Logs</button>
+    </section>
+
+    <section class="card">
+      <h2>Voice (Web Speech)</h2>
+      <label><input id="toggleUseBrowserSpeech" type="checkbox" checked /> Use browser speech recognition</label>
+      <button id="btnSpeakOnce">Speak Once</button>
+      <div class="kv"><span>Transcript</span><strong id="voiceTranscript">-</strong></div>
+      <div class="kv"><span>Command Status</span><strong id="voiceCommandStatus">idle</strong></div>
+    </section>
+
+    <section class="card span-2">
+      <h2>Live Log Console</h2>
+      <pre id="logConsole" class="console"></pre>
+    </section>
+  </main>
+
+  <script src="./app.js"></script>
+</body>
+</html>

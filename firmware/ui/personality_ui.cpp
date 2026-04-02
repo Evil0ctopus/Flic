@@ -172,56 +172,57 @@ void PersonalityUI::renderFace(const String& emotion) {
 
     uint16_t eyeColor = TFT_WHITE;
     uint16_t mouthColor = TFT_WHITE;
-    int eyeOffset = 12;
-    int eyeHeight = blink_ ? 2 : 8;
-    int mouthWidth = 26;
+    int eyeOffset = 20;
+    int eyeHeight = blink_ ? 3 : 12;
+    int eyeRadius = 9;
+    int mouthWidth = 44;
     int mouthCurve = 8;
 
     if (emotion == "curious") {
-        eyeOffset = 16;
+        eyeOffset = 24;
         mouthCurve = 4;
         if (!blink_) {
-            eyeHeight = 9;
+            eyeHeight = 13;
         }
     } else if (emotion == "sleepy") {
-        eyeHeight = 2;
+        eyeHeight = 3;
         mouthCurve = 2;
-        mouthWidth = 22;
+        mouthWidth = 36;
     } else if (emotion == "surprised") {
-        eyeOffset = 14;
-        eyeHeight = 12;
-        mouthWidth = 18;
+        eyeOffset = 22;
+        eyeHeight = 16;
+        mouthWidth = 24;
     } else if (emotion == "happy") {
         mouthCurve = 14;
         eyeColor = TFT_GREEN;
         mouthColor = TFT_GREEN;
-        eyeOffset = 13;
+        eyeOffset = 21;
     } else if (emotion == "calm") {
-        eyeOffset = 12;
+        eyeOffset = 20;
         mouthCurve = 8;
     }
 
     display.startWrite();
-    const int faceBoxX = centerX - 70;
-    const int faceBoxY = centerY - 44;
-    const int faceBoxW = 140;
-    const int faceBoxH = 92;
+    const int faceBoxX = centerX - 105;
+    const int faceBoxY = centerY - 68;
+    const int faceBoxW = 210;
+    const int faceBoxH = 136;
     display.fillRect(faceBoxX, faceBoxY, faceBoxW, faceBoxH, TFT_BLACK);
-    display.fillCircle(centerX - eyeOffset, centerY - 12, 6, eyeColor);
-    display.fillCircle(centerX + eyeOffset, centerY - 12, 6, eyeColor);
-    if (eyeHeight <= 2) {
-        display.drawFastHLine(centerX - eyeOffset - 6, centerY - 12, 12, eyeColor);
-        display.drawFastHLine(centerX + eyeOffset - 6, centerY - 12, 12, eyeColor);
+    display.fillCircle(centerX - eyeOffset, centerY - 18, eyeRadius, eyeColor);
+    display.fillCircle(centerX + eyeOffset, centerY - 18, eyeRadius, eyeColor);
+    if (eyeHeight <= 3) {
+        display.drawFastHLine(centerX - eyeOffset - eyeRadius, centerY - 18, eyeRadius * 2, eyeColor);
+        display.drawFastHLine(centerX + eyeOffset - eyeRadius, centerY - 18, eyeRadius * 2, eyeColor);
     } else {
-        display.fillRoundRect(centerX - eyeOffset - 6, centerY - 16, 12, eyeHeight, 4, eyeColor);
-        display.fillRoundRect(centerX + eyeOffset - 6, centerY - 16, 12, eyeHeight, 4, eyeColor);
+        display.fillRoundRect(centerX - eyeOffset - eyeRadius, centerY - 24, eyeRadius * 2, eyeHeight, 5, eyeColor);
+        display.fillRoundRect(centerX + eyeOffset - eyeRadius, centerY - 24, eyeRadius * 2, eyeHeight, 5, eyeColor);
     }
 
     if (emotion == "surprised") {
-        display.drawCircle(centerX, centerY + 8, 8, mouthColor);
+        display.drawCircle(centerX, centerY + 16, 12, mouthColor);
     } else {
-        display.drawLine(centerX - mouthWidth / 2, centerY + 10, centerX, centerY + 10 + mouthCurve / 2, mouthColor);
-        display.drawLine(centerX, centerY + 10 + mouthCurve / 2, centerX + mouthWidth / 2, centerY + 10, mouthColor);
+        display.drawLine(centerX - mouthWidth / 2, centerY + 18, centerX, centerY + 18 + mouthCurve / 2, mouthColor);
+        display.drawLine(centerX, centerY + 18 + mouthCurve / 2, centerX + mouthWidth / 2, centerY + 18, mouthColor);
     }
     display.endWrite();
 

@@ -20,6 +20,8 @@ public:
 private:
     void loadPermissions();
     bool isHandshakeMessage(const String& message) const;
+    bool markHandshakeFromMessage(const String& message);
+    bool parseCapabilitiesFromMessage(const String& message, String& outCsv) const;
     bool isControlAllowed() const;
     bool isApprovalRequired() const;
     bool isCommandApproved(const String& deviceId, const String& command) const;
@@ -35,6 +37,8 @@ private:
     bool connected_ = false;
     bool connectionJustEstablished_ = false;
     bool handshakeSent_ = false;
+    bool handshakeComplete_ = false;
+    uint32_t lastHelloSentMs_ = 0;
     bool controlAllowed_ = false;
     bool approvalRequired_ = true;
 };

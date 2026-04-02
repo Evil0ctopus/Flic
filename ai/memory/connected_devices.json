@@ -1,3 +1,9 @@
 {
+  "_schema": "flic.connected_devices.v1",
+  "_updated_at": 0,
+  "stats": {
+    "total_seen": 0,
+    "active": 0
+  },
   "devices": []
 }

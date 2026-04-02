@@ -1,0 +1,33 @@
+{
+  "name": "emotion_curious",
+  "fps": 12,
+  "frames": [
+    {
+      "duration": 100,
+      "pixels": [
+        {"x": 114, "y": 120, "color": "#FFCC00"},
+        {"x": 120, "y": 116, "color": "#FFCC00"},
+        {"x": 126, "y": 120, "color": "#FFCC00"}
+      ]
+    },
+    {
+      "duration": 120,
+      "pixels": [
+        {"x": 112, "y": 118, "color": "#FFCC00"},
+        {"x": 118, "y": 114, "color": "#FFF0A0"},
+        {"x": 122, "y": 114, "color": "#FFF0A0"},
+        {"x": 128, "y": 118, "color": "#FFCC00"}
+      ]
+    },
+    {
+      "duration": 140,
+      "pixels": [
+        {"x": 110, "y": 116, "color": "#DFA000"},
+        {"x": 116, "y": 112, "color": "#FFF0A0"},
+        {"x": 120, "y": 110, "color": "#FFFFFF"},
+        {"x": 124, "y": 112, "color": "#FFF0A0"},
+        {"x": 130, "y": 116, "color": "#DFA000"}
+      ]
+    }
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "name": "happy_wiggle",
+  "fps": 12,
+  "frames": [
+    {
+      "duration": 90,
+      "pixels": [
+        {"x": 114, "y": 118, "color": "#00FF60"},
+        {"x": 120, "y": 116, "color": "#80FF80"},
+        {"x": 126, "y": 118, "color": "#00FF60"}
+      ]
+    },
+    {
+      "duration": 100,
+      "pixels": [
+        {"x": 112, "y": 120, "color": "#00C040"},
+        {"x": 118, "y": 118, "color": "#A0FF80"},
+        {"x": 120, "y": 114, "color": "#FFFFFF"},
+        {"x": 122, "y": 118, "color": "#A0FF80"},
+        {"x": 128, "y": 120, "color": "#00C040"}
+      ]
+    },
+    {
+      "duration": 120,
+      "pixels": [
+        {"x": 114, "y": 122, "color": "#00FF60"},
+        {"x": 120, "y": 120, "color": "#C0FFC0"},
+        {"x": 126, "y": 122, "color": "#00FF60"}
+      ]
+    }
+  ]
+}

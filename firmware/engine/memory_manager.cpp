@@ -7,10 +7,13 @@
 namespace Flic {
 namespace {
 constexpr const char* kMemoryIndexPath = "/ai/memory/memory_index.json";
+constexpr bool kDisableSdPersistence = true;
 }
 
 bool MemoryManager::begin() {
-    loadMemory();
+    if (!kDisableSdPersistence) {
+        loadMemory();
+    }
     return true;
 }
 
@@ -27,11 +30,24 @@ void MemoryManager::recordEvent(String type, String detail) {
 }
 
 void MemoryManager::saveMemory() {
+    if (kDisableSdPersistence) {
+        return;
+    }
+
     JsonDocument document;
+    SdManager::readJSON(kMemoryIndexPath, document);
+    document["_schema"] = "flic.memory_index.v1";
+    document["_updated_at"] = millis();
+
     JsonArray interactions = document["interaction_timestamps"].to<JsonArray>();
     JsonArray emotionalHistory = document["emotional_history"].to<JsonArray>();
     JsonArray animationEvents = document["animation_events"].to<JsonArray>();
     JsonArray milestoneUnlocks = document["milestone_unlocks"].to<JsonArray>();
+
+    interactions.clear();
+    emotionalHistory.clear();
+    animationEvents.clear();
+    milestoneUnlocks.clear();
 
     for (size_t index = 0; index < count_; ++index) {
         interactions.add(timestamps_[index]);
@@ -59,6 +75,12 @@ void MemoryManager::saveMemory() {
 }
 
 void MemoryManager::loadMemory() {
+    if (kDisableSdPersistence) {
+        count_ = 0;
+        sequence_ = 0;
+        return;
+    }
+
     JsonDocument document;
     if (!SdManager::readJSON(kMemoryIndexPath, document)) {
         return;

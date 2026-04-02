@@ -13,7 +13,10 @@
 namespace Flic {
 
 namespace {
-constexpr bool kDisableVoiceAudioOutput = true;
+constexpr bool kDisableVoiceAudioOutput = false;  // ENABLED: Real TTS voice synthesis
+constexpr unsigned long kVoiceWarmupMs = 5000;
+constexpr size_t kMaxVoiceMessageLen = 120;
+constexpr unsigned long kVoiceSpeakCooldownMs = 3000;
 constexpr unsigned long kNotifyAnimationCooldownMs = 2600;
 constexpr unsigned long kNotifyBubbleCooldownMs = 1800;
 
@@ -89,10 +92,15 @@ void CommunicationEngine::speakVoice(const String& msg) {
         return;
     }
 
-    if (!kDisableVoiceAudioOutput && voiceEngine_ != nullptr) {
+    const bool voiceWarm = millis() >= kVoiceWarmupMs;
+    const bool messageTooLong = msg.length() > kMaxVoiceMessageLen;
+    static unsigned long lastVoiceSpeakMs = 0;
+    const unsigned long nowMs = millis();
+    const bool cooldownElapsed = (nowMs - lastVoiceSpeakMs) >= kVoiceSpeakCooldownMs;
+
+    if (!kDisableVoiceAudioOutput && voiceEngine_ != nullptr && voiceWarm && !messageTooLong && cooldownElapsed) {
         voiceEngine_->speak(msg, activeEmotion_);
-    } else if (!kDisableVoiceAudioOutput && M5.Speaker.isEnabled()) {
-        M5.Speaker.tone(560.0f, 90);
+        lastVoiceSpeakMs = nowMs;
     }
     speakText(msg);
     if (memoryManager_ != nullptr) {
@@ -253,19 +261,26 @@ void CommunicationEngine::vibrate(const String& pattern) {
 }
 
 void CommunicationEngine::notify(const String& msg, const String& emotion) {
+    const String normalizedEmotion = normalizeEmotion(emotion);
     const unsigned long nowMs = millis();
     const bool sameMessage = msg == lastNotifyMessage_;
-    const bool sameEmotion = emotion == lastNotifyEmotion_;
+    const bool sameEmotion = normalizedEmotion == lastNotifyEmotion_;
     const bool bubbleCooldownElapsed = (nowMs - lastNotifyMs_) >= kNotifyBubbleCooldownMs;
 
-    speakEmotion(emotion);
+    speakEmotion(normalizedEmotion);
+    if (lightEngine_ != nullptr && msg.length() > 0) {
+        lightEngine_->expressUtterance(msg, normalizedEmotion);
+    }
     if (msg.length() > 0 && (!sameMessage || !sameEmotion || bubbleCooldownElapsed)) {
         speakVoice(msg);
         lastNotifyMessage_ = msg;
-        lastNotifyEmotion_ = emotion;
+        lastNotifyEmotion_ = normalizedEmotion;
         lastNotifyMs_ = nowMs;
     }
-    speakLED(emotion);
+    speakLED(normalizedEmotion);
+    if (lightEngine_ != nullptr && msg.length() > 0) {
+        lightEngine_->expressUtterance(msg, normalizedEmotion);
+    }
 
     String notifyAnimation = "blink";
     if (emotion == "curious") {

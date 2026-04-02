@@ -1,5 +1,11 @@
 {
+  "_schema": "flic.emotion_state.v1",
+  "_updated_at": 0,
   "current": "calm",
   "target": "calm",
-  "blend": 1.0
+  "blend": 1.0,
+  "state": "calm",
+  "hold": 2.5,
+  "decay": 3.5,
+  "last_trigger": 0
 }

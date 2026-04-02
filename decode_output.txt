@@ -1,0 +1,4 @@
+0x42005cc7: Flic::CommunicationEngine::notify(String const&, String const&) at C:\Users\jlors\OneDrive\Desktop\Flic/firmware/engine/communication_engine.cpp:249
+0x4206f0c6: esp_pm_impl_waiti at /home/runner/work/esp32-arduino-lib-builder/esp32-arduino-lib-builder/esp-idf/components/esp_pm/pm_impl.c:855
+0x4037bb67: _xt_context_save at /home/runner/work/esp32-arduino-lib-builder/esp32-arduino-lib-builder/esp-idf/components/freertos/port/xtensa/xtensa_context.S:194
+0x4201263c: Flic::PersonalityUI::showExpression(String const&) at C:\Users\jlors\OneDrive\Desktop\Flic/firmware/ui/personality_ui.cpp:106

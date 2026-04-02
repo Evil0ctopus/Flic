@@ -1,0 +1,27 @@
+{
+  "name": "blink",
+  "fps": 12,
+  "frames": [
+    {
+      "duration": 80,
+      "pixels": [
+        {"x": 114, "y": 120, "color": "#FFFFFF"},
+        {"x": 126, "y": 120, "color": "#FFFFFF"}
+      ]
+    },
+    {
+      "duration": 90,
+      "pixels": [
+        {"x": 114, "y": 120, "color": "#808080"},
+        {"x": 126, "y": 120, "color": "#808080"}
+      ]
+    },
+    {
+      "duration": 80,
+      "pixels": [
+        {"x": 114, "y": 120, "color": "#FFFFFF"},
+        {"x": 126, "y": 120, "color": "#FFFFFF"}
+      ]
+    }
+  ]
+}
