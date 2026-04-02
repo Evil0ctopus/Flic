@@ -7,11 +7,34 @@
 
 namespace Flic {
 
+namespace {
+constexpr bool kDisableDisplayRendering = false;
+
+float clamp01(float value) {
+    if (value < 0.0f) {
+        return 0.0f;
+    }
+    if (value > 1.0f) {
+        return 1.0f;
+    }
+    return value;
+}
+}  // namespace
+
 bool PersonalityUI::begin(EmotionEngine* emotionEngine, LightEngine* lightEngine) {
     emotionEngine_ = emotionEngine;
     lightEngine_ = lightEngine;
     lastBlinkMs_ = millis();
+    blinkIntervalMs_ = 2400;
+    blinkHoldMs_ = 140;
+    lastEmotion_ = "calm";
     return true;
+}
+
+void PersonalityUI::setPersonality(float energy, float curiosity, float patience) {
+    energy_ = clamp01(energy);
+    curiosity_ = clamp01(curiosity);
+    patience_ = clamp01(patience);
 }
 
 void PersonalityUI::update(bool animationPlaying) {
@@ -20,15 +43,41 @@ void PersonalityUI::update(bool animationPlaying) {
     }
 
     const unsigned long now = millis();
-    if (now - lastBlinkMs_ > 2400) {
-        blink_ = !blink_;
+    const String emotion = emotionEngine_->getEmotion();
+    const bool previousBlink = blink_;
+    bool expressionChanged = false;
+    if (emotion != lastEmotion_) {
+        lastEmotion_ = emotion;
+        updateBlinkTiming(emotion);
+        blink_ = false;
         lastBlinkMs_ = now;
+        expressionChanged = true;
     }
 
-    renderFace(emotionEngine_->getEmotion());
+    const unsigned long elapsed = now - lastBlinkMs_;
+    if (!blink_ && elapsed >= blinkIntervalMs_) {
+        blink_ = true;
+        lastBlinkMs_ = now;
+        expressionChanged = true;
+    } else if (blink_ && elapsed >= blinkHoldMs_) {
+        blink_ = false;
+        lastBlinkMs_ = now;
+        expressionChanged = true;
+    }
+
+    if (!expressionChanged && hasRenderedFace_ && emotion == lastRenderedEmotion_ && previousBlink == blink_ &&
+        lastRenderedBlink_ == blink_) {
+        return;
+    }
+
+    renderFace(emotion);
 }
 
 void PersonalityUI::showExpression(const String& expression) {
+    if (kDisableDisplayRendering) {
+        return;
+    }
+
     auto& display = M5.Display;
     const int width = display.width();
     const int height = display.height();
@@ -108,6 +157,13 @@ void PersonalityUI::showCommandRejected(const String& command) {
 }
 
 void PersonalityUI::renderFace(const String& emotion) {
+    if (kDisableDisplayRendering) {
+        if (lightEngine_ != nullptr) {
+            lightEngine_->emotionColor(emotion);
+        }
+        return;
+    }
+
     auto& display = M5.Display;
     const int width = display.width();
     const int height = display.height();
@@ -124,9 +180,13 @@ void PersonalityUI::renderFace(const String& emotion) {
     if (emotion == "curious") {
         eyeOffset = 16;
         mouthCurve = 4;
+        if (!blink_) {
+            eyeHeight = 9;
+        }
     } else if (emotion == "sleepy") {
         eyeHeight = 2;
         mouthCurve = 2;
+        mouthWidth = 22;
     } else if (emotion == "surprised") {
         eyeOffset = 14;
         eyeHeight = 12;
@@ -135,10 +195,18 @@ void PersonalityUI::renderFace(const String& emotion) {
         mouthCurve = 14;
         eyeColor = TFT_GREEN;
         mouthColor = TFT_GREEN;
+        eyeOffset = 13;
+    } else if (emotion == "calm") {
+        eyeOffset = 12;
+        mouthCurve = 8;
     }
 
     display.startWrite();
-    display.fillScreen(TFT_BLACK);
+    const int faceBoxX = centerX - 70;
+    const int faceBoxY = centerY - 44;
+    const int faceBoxW = 140;
+    const int faceBoxH = 92;
+    display.fillRect(faceBoxX, faceBoxY, faceBoxW, faceBoxH, TFT_BLACK);
     display.fillCircle(centerX - eyeOffset, centerY - 12, 6, eyeColor);
     display.fillCircle(centerX + eyeOffset, centerY - 12, 6, eyeColor);
     if (eyeHeight <= 2) {
@@ -157,12 +225,59 @@ void PersonalityUI::renderFace(const String& emotion) {
     }
     display.endWrite();
 
+    hasRenderedFace_ = true;
+    lastRenderedEmotion_ = emotion;
+    lastRenderedBlink_ = blink_;
+
     if (lightEngine_ != nullptr) {
         lightEngine_->emotionColor(emotion);
     }
 }
 
+void PersonalityUI::updateBlinkTiming(const String& emotion) {
+    const float quietness = 1.0f + patience_ * 0.35f;
+    const float quickness = 1.0f - ((energy_ * 0.55f) + (curiosity_ * 0.35f));
+
+    blinkIntervalMs_ = static_cast<unsigned long>(2400.0f * quietness * (quickness < 0.45f ? 0.45f : quickness));
+    blinkHoldMs_ = static_cast<unsigned long>(140.0f * (1.0f + patience_ * 0.25f));
+
+    if (blinkIntervalMs_ < 900) {
+        blinkIntervalMs_ = 900;
+    }
+    if (blinkHoldMs_ < 90) {
+        blinkHoldMs_ = 90;
+    }
+
+    if (emotion == "calm") {
+        blinkIntervalMs_ = 2600;
+        blinkHoldMs_ = 150;
+    } else if (emotion == "curious") {
+        blinkIntervalMs_ = static_cast<unsigned long>(1700.0f * (1.0f - curiosity_ * 0.2f));
+        blinkHoldMs_ = static_cast<unsigned long>(120.0f * (1.0f + patience_ * 0.15f));
+    } else if (emotion == "happy") {
+        blinkIntervalMs_ = static_cast<unsigned long>(2100.0f * (1.0f - energy_ * 0.15f));
+        blinkHoldMs_ = static_cast<unsigned long>(130.0f * (1.0f + energy_ * 0.1f));
+    } else if (emotion == "sleepy") {
+        blinkIntervalMs_ = static_cast<unsigned long>(3600.0f * (1.0f + patience_ * 0.2f));
+        blinkHoldMs_ = static_cast<unsigned long>(200.0f * (1.0f + patience_ * 0.2f));
+    } else if (emotion == "surprised") {
+        blinkIntervalMs_ = static_cast<unsigned long>(1200.0f * (1.0f - curiosity_ * 0.15f));
+        blinkHoldMs_ = static_cast<unsigned long>(100.0f * (1.0f + energy_ * 0.1f));
+    }
+
+    if (blinkIntervalMs_ < 650) {
+        blinkIntervalMs_ = 650;
+    }
+    if (blinkHoldMs_ < 80) {
+        blinkHoldMs_ = 80;
+    }
+}
+
 void PersonalityUI::showStatusLine(const String& title, const String& detail) {
+    if (kDisableDisplayRendering) {
+        return;
+    }
+
     auto& display = M5.Display;
     display.startWrite();
     display.fillScreen(TFT_BLACK);

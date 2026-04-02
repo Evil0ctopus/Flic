@@ -13,6 +13,25 @@ bool TextBubbles::begin() {
 }
 
 void TextBubbles::showMessage(const String& msg, BubbleSize size, const String& emotion) {
+    if (visible_ && msg == message_) {
+        showStartMs_ = millis();
+
+        const unsigned long base = 900;
+        const unsigned long perChar = 45;
+        unsigned long sizeExtra = 0;
+        if (size == BubbleSize::Medium) {
+            sizeExtra = 250;
+        } else if (size == BubbleSize::Large) {
+            sizeExtra = 450;
+        }
+
+        showDurationMs_ = base + perChar * static_cast<unsigned long>(msg.length()) + sizeExtra;
+        if (showDurationMs_ > 7000) {
+            showDurationMs_ = 7000;
+        }
+        return;
+    }
+
     message_ = msg;
     size_ = size;
     emotion_ = emotion;

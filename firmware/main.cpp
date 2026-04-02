@@ -98,6 +98,7 @@ constexpr bool kEmergencyMinimalLoop = false;
 constexpr bool kDisableVoiceRuntime = true;
 constexpr bool kDisableVoiceInputHandling = true;
 constexpr bool kDisableImuEngine = true;
+constexpr bool kEnableUsbRuntime = true;
 
 unsigned long lastLoopMs = 0;
 unsigned long lastMotionNotifyMs = 0;
@@ -414,8 +415,9 @@ void initializeStorage() {
 void initializeCoreEngines() {
     memoryManager.begin();
     emotionEngine.begin(&lightEngine, &memoryManager, &animationEngine);
-    // Stable baseline: USB engine intentionally disabled for now.
-    // usbEngine.begin(Flic::kDefaultUsbBaud);
+    if (kEnableUsbRuntime) {
+        usbEngine.begin(Flic::kDefaultUsbBaud);
+    }
 
     const bool hadRealAnimations = animationEngine.begin() && animationEngine.hasRealAnimations();
     if (!hadRealAnimations) {
@@ -778,8 +780,9 @@ void loop() {
         handleImuEvents();
     }
     handleEnvironmentLightEvents();
-    // Stable baseline: USB engine intentionally disabled for now.
-    // handleUsbEvents();
+    if (kEnableUsbRuntime) {
+        handleUsbEvents();
+    }
 
     const unsigned long nowMs = millis();
     if ((nowMs - lastWebHeartbeatMs) >= kWebHeartbeatMs) {
