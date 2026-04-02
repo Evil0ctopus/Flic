@@ -1,6 +1,7 @@
 #include "communication_engine.h"
 
 #include "animation_engine.h"
+#include "emotion_engine.h"
 #include "memory_manager.h"
 #include "voice_engine.h"
 #include "../subsystems/light_engine.h"
@@ -11,19 +12,49 @@
 
 namespace Flic {
 
+namespace {
+constexpr bool kDisableVoiceAudioOutput = true;
+constexpr unsigned long kNotifyAnimationCooldownMs = 2600;
+constexpr unsigned long kNotifyBubbleCooldownMs = 1800;
+
+String normalizeEmotion(const String& emotion) {
+    if (emotion.length() == 0) {
+        return "calm";
+    }
+
+    if (emotion == "warning" || emotion == "surprise") {
+        return "surprised";
+    }
+
+    if (emotion == "excited") {
+        return "happy";
+    }
+
+    return emotion;
+}
+
+}  // namespace
+
 bool CommunicationEngine::begin(LightEngine* lightEngine,
                                 PersonalityUI* personalityUi,
                                 AnimationEngine* animationEngine,
+                                EmotionEngine* emotionEngine,
                                 MemoryManager* memoryManager,
                                 TextBubbles* textBubbles,
                                 VoiceEngine* voiceEngine) {
     lightEngine_ = lightEngine;
     personalityUi_ = personalityUi;
     animationEngine_ = animationEngine;
+    emotionEngine_ = emotionEngine;
     memoryManager_ = memoryManager;
     textBubbles_ = textBubbles;
     voiceEngine_ = voiceEngine;
     activeEmotion_ = "calm";
+    lastNotifyMs_ = 0;
+    lastNotifyMessage_ = "";
+    lastNotifyEmotion_ = "";
+    lastNotifyAnimationMs_ = 0;
+    lastNotifyAnimation_ = "";
     return true;
 }
 
@@ -34,6 +65,10 @@ void CommunicationEngine::update() {
 }
 
 void CommunicationEngine::speakText(const String& msg) {
+    if (msg.length() == 0) {
+        return;
+    }
+
     if (textBubbles_ != nullptr) {
         BubbleSize size = BubbleSize::Medium;
         if (msg.length() <= 20) {
@@ -50,9 +85,13 @@ void CommunicationEngine::speakText(const String& msg) {
 }
 
 void CommunicationEngine::speakVoice(const String& msg) {
-    if (voiceEngine_ != nullptr) {
+    if (msg.length() == 0) {
+        return;
+    }
+
+    if (!kDisableVoiceAudioOutput && voiceEngine_ != nullptr) {
         voiceEngine_->speak(msg, activeEmotion_);
-    } else if (M5.Speaker.isEnabled()) {
+    } else if (!kDisableVoiceAudioOutput && M5.Speaker.isEnabled()) {
         M5.Speaker.tone(560.0f, 90);
     }
     speakText(msg);
@@ -62,10 +101,18 @@ void CommunicationEngine::speakVoice(const String& msg) {
 }
 
 void CommunicationEngine::speakEmotion(const String& emotion) {
-    activeEmotion_ = emotion.length() == 0 ? "calm" : emotion;
+    activeEmotion_ = normalizeEmotion(emotion);
+
+    if (emotionEngine_ != nullptr) {
+        emotionEngine_->setEmotion(activeEmotion_);
+    }
 
     if (lightEngine_ != nullptr) {
         lightEngine_->emotionColor(activeEmotion_);
+    }
+
+    if (personalityUi_ != nullptr && activeEmotion_ == "surprised") {
+        personalityUi_->showExpression("surprise");
     }
 
     if (memoryManager_ != nullptr) {
@@ -85,6 +132,9 @@ void CommunicationEngine::speakAnimation(const String& anim) {
         if (lightEngine_ != nullptr) {
             lightEngine_->flash(255, 255, 255, 1);
         }
+        if (animationEngine_ != nullptr) {
+            animationEngine_->playPreset("surprise");
+        }
         return;
     }
 
@@ -98,6 +148,9 @@ void CommunicationEngine::speakAnimation(const String& anim) {
         if (lightEngine_ != nullptr) {
             lightEngine_->pulse(120, 60, 255, 20);
         }
+        if (animationEngine_ != nullptr) {
+            animationEngine_->playPreset("thinking_loop");
+        }
         return;
     }
 
@@ -107,8 +160,10 @@ void CommunicationEngine::speakAnimation(const String& anim) {
         }
         if (lightEngine_ != nullptr) {
             lightEngine_->setBrightness(8);
-            delay(50);
             lightEngine_->setBrightness(18);
+        }
+        if (animationEngine_ != nullptr) {
+            animationEngine_->playPreset("blink");
         }
         return;
     }
@@ -116,6 +171,15 @@ void CommunicationEngine::speakAnimation(const String& anim) {
     if (anim == "head_tilt_left" || anim == "head_tilt_right" || anim == "idle_breathing") {
         if (personalityUi_ != nullptr) {
             personalityUi_->showExpression(anim);
+        }
+        if (animationEngine_ != nullptr) {
+            if (anim == "head_tilt_left") {
+                animationEngine_->playMicroGesture("tilt_left");
+            } else if (anim == "head_tilt_right") {
+                animationEngine_->playMicroGesture("tilt_right");
+            } else {
+                animationEngine_->playPreset("idle_breathing");
+            }
         }
         return;
     }
@@ -126,6 +190,11 @@ void CommunicationEngine::speakAnimation(const String& anim) {
             fileName += ".json";
         }
         animationEngine_->playAnimation(fileName.c_str());
+        return;
+    }
+
+    if (personalityUi_ != nullptr) {
+        personalityUi_->showExpression(anim);
     }
 }
 
@@ -134,17 +203,27 @@ void CommunicationEngine::speakLED(const String& pattern) {
         return;
     }
 
-    if (pattern == "calm") {
-        lightEngine_->pulse(0, 80, 255, 26);
-    } else if (pattern == "curious") {
-        lightEngine_->pulse(150, 0, 255, 18);
-    } else if (pattern == "excited") {
-        lightEngine_->flash(255, 220, 0, 3);
-    } else if (pattern == "happy") {
-        lightEngine_->flashCommandApproved();
-    } else if (pattern == "warning") {
+    if (pattern == "warning") {
         lightEngine_->flashCommandRejected();
-    } else if (pattern == "sleepy") {
+        return;
+    }
+
+    if (pattern == "happy") {
+        lightEngine_->flashCommandApproved();
+        return;
+    }
+
+    const String emotion = normalizeEmotion(pattern);
+
+    if (emotion == "calm") {
+        lightEngine_->pulse(0, 80, 255, 26);
+    } else if (emotion == "curious") {
+        lightEngine_->pulse(150, 0, 255, 18);
+    } else if (emotion == "happy") {
+        lightEngine_->flash(255, 220, 0, 3);
+    } else if (emotion == "surprised") {
+        lightEngine_->flash(255, 255, 255, 2);
+    } else if (emotion == "sleepy") {
         lightEngine_->pulse(0, 120, 120, 34);
     } else {
         lightEngine_->emotionColor(activeEmotion_);
@@ -174,18 +253,35 @@ void CommunicationEngine::vibrate(const String& pattern) {
 }
 
 void CommunicationEngine::notify(const String& msg, const String& emotion) {
+    const unsigned long nowMs = millis();
+    const bool sameMessage = msg == lastNotifyMessage_;
+    const bool sameEmotion = emotion == lastNotifyEmotion_;
+    const bool bubbleCooldownElapsed = (nowMs - lastNotifyMs_) >= kNotifyBubbleCooldownMs;
+
     speakEmotion(emotion);
-    speakText(msg);
+    if (msg.length() > 0 && (!sameMessage || !sameEmotion || bubbleCooldownElapsed)) {
+        speakVoice(msg);
+        lastNotifyMessage_ = msg;
+        lastNotifyEmotion_ = emotion;
+        lastNotifyMs_ = nowMs;
+    }
     speakLED(emotion);
 
+    String notifyAnimation = "blink";
     if (emotion == "curious") {
-        speakAnimation("thinking");
+        notifyAnimation = "thinking";
     } else if (emotion == "warning") {
-        speakAnimation("surprise");
+        notifyAnimation = "surprise";
     } else if (emotion == "sleepy") {
-        speakAnimation("idle_breathing");
-    } else {
-        speakAnimation("blink");
+        notifyAnimation = "idle_breathing";
+    }
+
+    const bool sameAnimation = notifyAnimation == lastNotifyAnimation_;
+    const bool cooldownElapsed = (nowMs - lastNotifyAnimationMs_) >= kNotifyAnimationCooldownMs;
+    if ((!sameAnimation || cooldownElapsed) && (!sameEmotion || cooldownElapsed)) {
+        speakAnimation(notifyAnimation);
+        lastNotifyAnimation_ = notifyAnimation;
+        lastNotifyAnimationMs_ = nowMs;
     }
 
     if (emotion == "warning") {
@@ -202,9 +298,9 @@ void CommunicationEngine::notify(const String& msg, const String& emotion) {
 void CommunicationEngine::handleTouchMeaning(const String& meaning) {
     if (meaning == "acknowledge") {
         notify("Got it.", "calm");
+        speakAnimation("micro_nod");
     } else if (meaning == "excitement") {
-        notify("Yay!", "excited");
-        speakAnimation("surprise");
+        notify("Yay!", "surprise");
     } else if (meaning == "comfort") {
         notify("I'm here.", "calm");
         vibrate("purr");
@@ -212,13 +308,14 @@ void CommunicationEngine::handleTouchMeaning(const String& meaning) {
         notify("Canceled.", "warning");
     } else if (meaning == "continue") {
         notify("Continuing.", "curious");
+        speakAnimation("micro_tilt_right");
     } else if (meaning == "attention") {
         notify("I'm paying attention.", "curious");
-        speakAnimation("thinking");
+        speakAnimation("micro_tilt_left");
     } else if (meaning == "dismiss") {
         notify("Dismissed.", "sleepy");
     } else if (meaning == "drag") {
-        speakText("Dragging...");
+        notify("Dragging...", "curious");
     }
 }
 

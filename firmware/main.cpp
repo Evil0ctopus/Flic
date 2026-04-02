@@ -91,14 +91,15 @@ constexpr const char* kEventCommandSent = "command_sent";
 constexpr const char* kEventCommandRejected = "command_rejected";
 constexpr const char* kHandWaveEvent = "hand_wave";
 constexpr uint8_t kMaxUsbMessagesPerLoop = 6;
-constexpr unsigned long kMotionNotifyCooldownMs = 1200;
-constexpr unsigned long kImuNotifyCooldownMs = 900;
+constexpr unsigned long kMotionNotifyCooldownMs = 2200;
+constexpr unsigned long kImuNotifyCooldownMs = 2200;
 constexpr unsigned long kWebHeartbeatMs = 1000;
 constexpr bool kEmergencyMinimalLoop = false;
 constexpr bool kDisableVoiceRuntime = true;
 constexpr bool kDisableVoiceInputHandling = true;
 constexpr bool kDisableImuEngine = false;
 constexpr bool kEnableUsbRuntime = true;
+constexpr bool kEnableMilestoneRuntime = true;
 
 unsigned long lastLoopMs = 0;
 unsigned long lastMotionNotifyMs = 0;
@@ -430,8 +431,9 @@ void initializeCoreEngines() {
     learningEngine.begin(&memoryManager, &deviceLearning);
     textBubbles.begin();
     communicationEngine.begin(&lightEngine, &personalityUi, &animationEngine, &emotionEngine, &memoryManager, &textBubbles, &voiceEngine);
-    // Stable baseline: milestone engine intentionally disabled for now.
-    // milestoneEngine.begin(&memoryManager, &animationEngine, &emotionEngine, &communicationEngine);
+    if (kEnableMilestoneRuntime) {
+        milestoneEngine.begin(&memoryManager, &animationEngine, &emotionEngine, &communicationEngine);
+    }
 }
 
 void initializeInteractionEngines() {
@@ -515,8 +517,9 @@ void showEmergencyScreenIfEnabled() {
 void updateRuntimeEngines(float dtSeconds) {
     emotionEngine.updateEmotion(dtSeconds);
     communicationEngine.update();
-    // Stable baseline: milestone engine intentionally disabled for now.
-    // milestoneEngine.update();
+    if (kEnableMilestoneRuntime) {
+        milestoneEngine.update();
+    }
     if (!kDisableVoiceRuntime) {
         voiceEngine.update();
     }

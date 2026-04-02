@@ -7,6 +7,7 @@ namespace Flic {
 class LightEngine;
 class PersonalityUI;
 class AnimationEngine;
+class EmotionEngine;
 class MemoryManager;
 class TextBubbles;
 class VoiceEngine;
@@ -16,6 +17,7 @@ public:
     bool begin(LightEngine* lightEngine,
                PersonalityUI* personalityUi,
                AnimationEngine* animationEngine,
+               EmotionEngine* emotionEngine,
                MemoryManager* memoryManager,
                TextBubbles* textBubbles,
                VoiceEngine* voiceEngine);
@@ -35,10 +37,16 @@ private:
     LightEngine* lightEngine_ = nullptr;
     PersonalityUI* personalityUi_ = nullptr;
     AnimationEngine* animationEngine_ = nullptr;
+    EmotionEngine* emotionEngine_ = nullptr;
     MemoryManager* memoryManager_ = nullptr;
     TextBubbles* textBubbles_ = nullptr;
     VoiceEngine* voiceEngine_ = nullptr;
     String activeEmotion_ = "calm";
+    unsigned long lastNotifyMs_ = 0;
+    String lastNotifyMessage_ = "";
+    String lastNotifyEmotion_ = "";
+    unsigned long lastNotifyAnimationMs_ = 0;
+    String lastNotifyAnimation_ = "";
 };
 
 }  // namespace Flic
