@@ -97,6 +97,10 @@ constexpr unsigned long kWebHeartbeatMs = 1000;
 constexpr bool kEmergencyMinimalLoop = false;
 constexpr bool kDisableVoiceRuntime = true;
 constexpr bool kDisableVoiceInputHandling = true;
+constexpr bool kEnableVoiceLiteMode = true;
+constexpr bool kVoiceLiteSuppressSoundEvents = true;
+constexpr unsigned long kVoiceLiteUpdateIntervalMs = 900;
+constexpr unsigned long kVoiceLiteInputPollIntervalMs = 900;
 constexpr bool kDisableImuEngine = false;
 constexpr bool kEnableUsbRuntime = true;
 constexpr bool kEnableMilestoneRuntime = true;
@@ -105,6 +109,8 @@ unsigned long lastLoopMs = 0;
 unsigned long lastMotionNotifyMs = 0;
 unsigned long lastImuNotifyMs = 0;
 unsigned long lastWebHeartbeatMs = 0;
+unsigned long lastVoiceUpdateMs = 0;
+unsigned long lastVoiceInputPollMs = 0;
 
 String lastImuEventName;
 String lastImuEventDetail;
@@ -455,6 +461,8 @@ void initializeRuntimeServices() {
     lastMotionNotifyMs = 0;
     lastImuNotifyMs = 0;
     lastWebHeartbeatMs = 0;
+    lastVoiceUpdateMs = 0;
+    lastVoiceInputPollMs = 0;
 
     idleBehavior.begin(&lightEngine, &emotionEngine, &personalityUi);
 
@@ -521,7 +529,11 @@ void updateRuntimeEngines(float dtSeconds) {
         milestoneEngine.update();
     }
     if (!kDisableVoiceRuntime) {
-        voiceEngine.update();
+        const unsigned long nowMs = millis();
+        if (!kEnableVoiceLiteMode || (nowMs - lastVoiceUpdateMs) >= kVoiceLiteUpdateIntervalMs) {
+            voiceEngine.update();
+            lastVoiceUpdateMs = nowMs;
+        }
     }
     webUiEngine.update();
     cameraEngine.update();
@@ -577,6 +589,9 @@ void handleVoiceInput() {
 
     String soundEvent;
     if (voiceEngine.popSoundEvent(soundEvent)) {
+        if (kEnableVoiceLiteMode && kVoiceLiteSuppressSoundEvents) {
+            return;
+        }
         learningEngine.observeMotion(soundEvent);
         emotionEngine.observeMotion("audio", "loud_sound", soundEvent);
         communicationEngine.notify(String("Sound: ") + soundEvent, "warning");
@@ -776,7 +791,11 @@ void loop() {
     updateRuntimeEngines(dtSeconds);
     handleTouchInput();
     if (!kDisableVoiceInputHandling) {
-        handleVoiceInput();
+        const unsigned long nowMs = millis();
+        if (!kEnableVoiceLiteMode || (nowMs - lastVoiceInputPollMs) >= kVoiceLiteInputPollIntervalMs) {
+            handleVoiceInput();
+            lastVoiceInputPollMs = nowMs;
+        }
     }
     handleCameraEvents();
     if (!kDisableImuEngine) {
