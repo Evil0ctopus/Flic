@@ -8,7 +8,7 @@
 namespace Flic {
 namespace {
 constexpr const char* kPermissionsPath = "/permissions.json";
-constexpr const char* kConnectedDevicesPath = "/ai/memory/connected_devices.json";
+constexpr const char* kConnectedDevicesPath = "/Flic/memory/connected_devices.json";
 constexpr const char* kDeviceIdPrefix = "DEVICE_ID:";
 constexpr size_t kDeviceIdPrefixLength = 10;
 constexpr const char* kDeviceTypePrefix = "DEVICE_TYPE:";
@@ -294,7 +294,7 @@ bool UsbEngine::isApprovalRequired() const {
 
 bool UsbEngine::isCommandApproved(const String& deviceId, const String& command) const {
     JsonDocument proposalsDocument;
-    if (!SdManager::readJSON("/ai/memory/proposals.json", proposalsDocument)) {
+    if (!SdManager::readJSON("/Flic/memory/proposals.json", proposalsDocument)) {
         return false;
     }
 
@@ -316,7 +316,7 @@ bool UsbEngine::isCommandApproved(const String& deviceId, const String& command)
         const bool approved = entry["approved"] | false;
         const bool sent = entry["sent"] | false;
         const bool requiresApproval = entry["requires_approval"] | false;
-        if (entryType == "usb_command" && approved && !sent && requiresApproval && pathScope == "/ai" &&
+        if (entryType == "usb_command" && approved && !sent && requiresApproval && pathScope == "/Flic" &&
             entryDevice == deviceId && entryCommand == command && isSafeUsbCommand(entryCommand)) {
             return true;
         }

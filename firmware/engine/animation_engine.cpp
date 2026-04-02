@@ -11,7 +11,7 @@
 
 namespace Flic {
 namespace {
-constexpr const char* kAnimationRoot = "/ai/animations";
+constexpr const char* kAnimationRoot = "/Flic/animations";
 constexpr uint16_t kMinimumFps = 10;
 constexpr uint16_t kMaximumFps = 20;
 constexpr float kMinimumPlaybackSpeed = 0.25f;

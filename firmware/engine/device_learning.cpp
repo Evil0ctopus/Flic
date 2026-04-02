@@ -8,7 +8,7 @@
 
 namespace Flic {
 namespace {
-constexpr const char* kDevicePatternsPath = "/ai/memory/device_patterns.json";
+constexpr const char* kDevicePatternsPath = "/Flic/memory/device_patterns.json";
 }
 
 bool DeviceLearning::begin(MemoryManager* memoryManager, ProposalSystem* proposalSystem) {

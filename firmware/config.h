@@ -8,7 +8,7 @@
 
 namespace Flic {
 
-constexpr const char* kMemoryRoot = "/ai/memory";
+constexpr const char* kMemoryRoot = "/Flic/memory";
 constexpr uint32_t kDefaultUsbBaud = 115200;
 constexpr uint32_t kFrameDelayMs = 16;
 // M5GO Battery Bottom3 (A014-D, CoreS3): 10x WS2812 on M5-Bus RGB line (GPIO5)

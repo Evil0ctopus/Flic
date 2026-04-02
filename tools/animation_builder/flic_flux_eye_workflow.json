@@ -1,0 +1,52 @@
+{
+  "1": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "text": "",
+      "clip": ["10", 1]
+    },
+    "_meta": {
+      "title": "STYLE_PROMPT"
+    }
+  },
+  "2": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "text": "",
+      "clip": ["10", 1]
+    },
+    "_meta": {
+      "title": "NEG_PROMPT"
+    }
+  },
+  "3": {
+    "class_type": "PrimitiveNode",
+    "inputs": {
+      "eyelid_strength": 0.0,
+      "iris_scale": 1.0,
+      "pupil_visibility": 1.0,
+      "glow": 1.0
+    },
+    "_meta": {
+      "title": "EYELID_NODE"
+    }
+  },
+  "4": {
+    "class_type": "Seed",
+    "inputs": {
+      "seed": 12345
+    },
+    "_meta": {
+      "title": "SEED"
+    }
+  },
+  "5": {
+    "class_type": "ImageOutput",
+    "inputs": {
+      "images": ["11", 0]
+    },
+    "_meta": {
+      "title": "IMAGE"
+    }
+  }
+}

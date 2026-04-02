@@ -1,13 +1,15 @@
 #include "voice_engine.h"
 
+#include "face_engine.h"
 #include "audio_input.h"
 #include "audio_output.h"
 
 namespace Flic {
 
-bool VoiceEngine::begin(AudioInput* input, AudioOutput* output) {
+bool VoiceEngine::begin(AudioInput* input, AudioOutput* output, FaceEngine* faceEngine) {
     input_ = input;
     output_ = output;
+    faceEngine_ = faceEngine;
     if (input_ != nullptr) {
         input_->begin();
     }
@@ -34,6 +36,11 @@ bool VoiceEngine::popSoundEvent(String& eventOut) {
 void VoiceEngine::speak(const String& msg, const String& emotion) {
     if (output_ == nullptr) {
         return;
+    }
+    if (faceEngine_ != nullptr) {
+        faceEngine_->setEmotion(emotion);
+        faceEngine_->setSpeakingAmplitude(0.75f);
+        faceEngine_->play("speaking");
     }
     // Speak with full TTS using emotion context
     output_->speakTTS(msg, emotion, "en");

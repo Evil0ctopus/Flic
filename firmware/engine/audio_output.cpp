@@ -8,10 +8,7 @@ namespace Flic {
 
 namespace {
 constexpr uint8_t kSpeechOutputVolume = 120;
-constexpr uint32_t kTtsQueueWaitMs = 0;
 constexpr uint32_t kTtsLongSpeechWarnMs = 2500;
-constexpr uint32_t kTtsTaskStackWords = 8192;
-constexpr uint32_t kTtsTaskPriority = 2;
 
 struct TtsRequest {
     char text[224];
@@ -20,12 +17,14 @@ struct TtsRequest {
     uint32_t queuedAtMs = 0;
 };
 
-QueueHandle_t gTtsQueue = nullptr;
-TaskHandle_t gTtsTask = nullptr;
-volatile bool gTtsBusy = false;
-
 void processSpeechRequest(AudioOutput* owner, const TtsRequest& request);
-void ttsWorkerTask(void* parameter);
+bool samFallbackSpeak(const String& text,
+                      const String& emotion,
+                      const String& lang,
+                      float speed,
+                      float pitch,
+                      float clarity,
+                      void* context);
 
 uint8_t clampVolume(uint8_t volume) {
     return volume;
@@ -115,7 +114,6 @@ void processSpeechRequest(AudioOutput* owner, const TtsRequest& request) {
     }
 
     const unsigned long startMs = millis();
-    gTtsBusy = true;
     Serial.printf("[AudioOutput] TTS start (queued %lu ms ago): %s\n",
                   static_cast<unsigned long>(startMs - request.queuedAtMs), request.text);
 
@@ -123,7 +121,6 @@ void processSpeechRequest(AudioOutput* owner, const TtsRequest& request) {
     if (!audioOut.begin()) {
         Serial.println("[AudioOutput] Failed to initialize audio output");
         owner->playEmotionTone(String(request.emotion));
-        gTtsBusy = false;
         return;
     }
 
@@ -178,8 +175,16 @@ void processSpeechRequest(AudioOutput* owner, const TtsRequest& request) {
         pitch = static_cast<uint8_t>(pitch > 4 ? pitch - 4 : pitch);
     }
 
-    sam.SetSpeed(speed);
-    sam.SetPitch(pitch);
+    const float speedTuning = owner->voiceSpeed();
+    const float pitchTuning = owner->voicePitch();
+    const float clarityTuning = owner->voiceClarity();
+
+    speed = static_cast<uint8_t>(speed * speedTuning);
+    pitch = static_cast<uint8_t>(pitch * pitchTuning);
+    mouth = static_cast<uint8_t>(mouth * clarityTuning);
+
+    sam.SetSpeed(speed < 10 ? 10 : (speed > 120 ? 120 : speed));
+    sam.SetPitch(pitch < 10 ? 10 : (pitch > 120 ? 120 : pitch));
     sam.SetMouth(mouth);
     sam.SetThroat(throat);
 
@@ -199,17 +204,30 @@ void processSpeechRequest(AudioOutput* owner, const TtsRequest& request) {
     }
 
     audioOut.stop();
-    gTtsBusy = false;
 }
 
-void ttsWorkerTask(void* parameter) {
-    auto* owner = static_cast<AudioOutput*>(parameter);
-    TtsRequest request{};
-    for (;;) {
-        if (gTtsQueue != nullptr && xQueueReceive(gTtsQueue, &request, portMAX_DELAY) == pdTRUE) {
-            processSpeechRequest(owner, request);
-        }
+bool samFallbackSpeak(const String& text,
+                      const String& emotion,
+                      const String& lang,
+                      float speed,
+                      float pitch,
+                      float clarity,
+                      void* context) {
+    (void)speed;
+    (void)pitch;
+    (void)clarity;
+    auto* owner = static_cast<AudioOutput*>(context);
+    if (owner == nullptr) {
+        return false;
     }
+
+    TtsRequest request{};
+    snprintf(request.text, sizeof(request.text), "%s", text.c_str());
+    snprintf(request.emotion, sizeof(request.emotion), "%s", emotion.c_str());
+    snprintf(request.lang, sizeof(request.lang), "%s", lang.c_str());
+    request.queuedAtMs = millis();
+    processSpeechRequest(owner, request);
+    return true;
 }
 
 }  // namespace
@@ -221,22 +239,15 @@ bool AudioOutput::begin() {
 
     M5.Speaker.setVolume(clampVolume(volume_));
 
-    if (gTtsQueue == nullptr) {
-        gTtsQueue = xQueueCreate(2, sizeof(TtsRequest));
-    }
-    if (gTtsTask == nullptr && gTtsQueue != nullptr) {
-        xTaskCreatePinnedToCore(ttsWorkerTask, "tts_task", kTtsTaskStackWords, this, kTtsTaskPriority, &gTtsTask, 0);
-    }
-
-    if (gTtsQueue == nullptr || gTtsTask == nullptr) {
-        Serial.println("[AudioOutput] TTS worker unavailable; speakTTS will be dropped");
+    if (!neuralTts_.begin(samFallbackSpeak, this)) {
+        Serial.println("[AudioOutput] Neural TTS worker unavailable; fallback voice may be limited");
     }
 
     return true;
 }
 
 bool AudioOutput::isSpeaking() const {
-    return gTtsBusy;
+    return neuralTts_.isBusy();
 }
 
 void AudioOutput::setVolume(uint8_t volume) {
@@ -282,6 +293,46 @@ String AudioOutput::voiceStyleName() const {
     return "natural";
 }
 
+std::vector<String> AudioOutput::listVoices() const {
+    return neuralTts_.listVoices();
+}
+
+bool AudioOutput::setActiveVoiceModel(const String& modelFileName) {
+    return neuralTts_.setActiveVoice(modelFileName);
+}
+
+String AudioOutput::activeVoiceModel() const {
+    return neuralTts_.activeVoice();
+}
+
+void AudioOutput::setVoiceTuning(float speed, float pitch, float clarity) {
+    neuralTts_.setVoiceParams(speed, pitch, clarity);
+}
+
+float AudioOutput::voiceSpeed() const {
+    return neuralTts_.speed();
+}
+
+float AudioOutput::voicePitch() const {
+    return neuralTts_.pitch();
+}
+
+float AudioOutput::voiceClarity() const {
+    return neuralTts_.clarity();
+}
+
+void AudioOutput::setFallbackVoiceEnabled(bool enabled) {
+    neuralTts_.setFallbackEnabled(enabled);
+}
+
+bool AudioOutput::fallbackVoiceEnabled() const {
+    return neuralTts_.fallbackEnabled();
+}
+
+void AudioOutput::setAmplitudeEnvelopeHandler(AmplitudeEnvelopeFn handler, void* context) {
+    neuralTts_.setAmplitudeEnvelopeHandler(handler, context);
+}
+
 void AudioOutput::update() {
     // Non-blocking audio streaming update can be added here for advanced features
     // For now, we stream blocking during speakTTS()
@@ -303,28 +354,14 @@ void AudioOutput::speakTTS(const String& msg, const String& emotion, const Strin
         return;
     }
 
-    if (!speechText.endsWith(".") && !speechText.endsWith("!") && !speechText.endsWith("?")) {
-        speechText += ".";
-    }
-
-    if (gTtsQueue == nullptr || gTtsTask == nullptr) {
-        Serial.println("[AudioOutput] TTS worker unavailable; dropping request");
+    if (!neuralTts_.speak(speechText, emotion, lang)) {
+        Serial.println("[AudioOutput] Neural TTS queue full/unavailable, falling back to tone");
+        playEmotionTone(emotion);
         return;
     }
 
-    TtsRequest request{};
-    snprintf(request.text, sizeof(request.text), "%s", speechText.c_str());
-    snprintf(request.emotion, sizeof(request.emotion), "%s", emotion.c_str());
-    snprintf(request.lang, sizeof(request.lang), "%s", lang.c_str());
-    request.queuedAtMs = millis();
-
-    if (xQueueSend(gTtsQueue, &request, kTtsQueueWaitMs) != pdTRUE) {
-        Serial.println("[AudioOutput] TTS queue full, dropping request");
-        return;
-    }
-
-    Serial.printf("[AudioOutput] TTS queued: %s (emotion: %s, lang: %s, style: %s)\n",
-                  request.text, request.emotion, request.lang, voiceStyleName().c_str());
+    Serial.printf("[AudioOutput] TTS queued: %s (emotion: %s, lang: %s, style: %s, voice: %s)\n",
+                  speechText.c_str(), emotion.c_str(), lang.c_str(), voiceStyleName().c_str(), activeVoiceModel().c_str());
 }
 
 void AudioOutput::playEmotionTone(const String& emotion) {

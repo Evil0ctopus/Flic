@@ -11,6 +11,7 @@ class EmotionEngine;
 class MemoryManager;
 class TextBubbles;
 class VoiceEngine;
+class FaceEngine;
 
 class CommunicationEngine {
 public:
@@ -20,7 +21,8 @@ public:
                EmotionEngine* emotionEngine,
                MemoryManager* memoryManager,
                TextBubbles* textBubbles,
-               VoiceEngine* voiceEngine);
+               VoiceEngine* voiceEngine,
+               FaceEngine* faceEngine = nullptr);
 
     void update();
     void speakText(const String& msg);
@@ -41,6 +43,7 @@ private:
     MemoryManager* memoryManager_ = nullptr;
     TextBubbles* textBubbles_ = nullptr;
     VoiceEngine* voiceEngine_ = nullptr;
+    FaceEngine* faceEngine_ = nullptr;
     String activeEmotion_ = "calm";
     unsigned long lastNotifyMs_ = 0;
     String lastNotifyMessage_ = "";

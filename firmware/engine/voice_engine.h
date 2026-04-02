@@ -6,10 +6,11 @@ namespace Flic {
 
 class AudioInput;
 class AudioOutput;
+class FaceEngine;
 
 class VoiceEngine {
 public:
-    bool begin(AudioInput* input, AudioOutput* output);
+    bool begin(AudioInput* input, AudioOutput* output, FaceEngine* faceEngine = nullptr);
     void update();
     bool popVoiceCommand(String& commandOut);
     bool popSoundEvent(String& eventOut);
@@ -18,6 +19,7 @@ public:
 private:
     AudioInput* input_ = nullptr;
     AudioOutput* output_ = nullptr;
+    FaceEngine* faceEngine_ = nullptr;
 };
 
 }  // namespace Flic

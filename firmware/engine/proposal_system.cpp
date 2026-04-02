@@ -8,7 +8,7 @@
 
 namespace Flic {
 namespace {
-constexpr const char* kProposalsPath = "/ai/memory/proposals.json";
+constexpr const char* kProposalsPath = "/Flic/memory/proposals.json";
 }
 
 bool ProposalSystem::begin(MemoryManager* memoryManager, EmotionEngine* emotionEngine) {
@@ -43,7 +43,7 @@ void ProposalSystem::proposeChange(const String& proposal) {
     entry["type"] = "general";
     entry["requires_approval"] = true;
     entry["approved"] = false;
-    entry["path_scope"] = "/ai";
+    entry["path_scope"] = "/Flic";
 
     SdManager::writeJSON(kProposalsPath, document);
     if (memoryManager_ != nullptr) {
@@ -79,7 +79,7 @@ void ProposalSystem::proposeUsbDevice(const String& deviceId, const String& reas
     entry["reason"] = reason;
     entry["approved"] = false;
     entry["requires_approval"] = true;
-    entry["path_scope"] = "/ai";
+    entry["path_scope"] = "/Flic";
 
     SdManager::writeJSON(kProposalsPath, document);
     if (memoryManager_ != nullptr) {
@@ -104,7 +104,7 @@ void ProposalSystem::proposeUsbCommand(const String& deviceId, const String& com
     entry["approved"] = false;
     entry["sent"] = false;
     entry["requires_approval"] = true;
-    entry["path_scope"] = "/ai";
+    entry["path_scope"] = "/Flic";
 
     SdManager::writeJSON(kProposalsPath, document);
     if (memoryManager_ != nullptr) {
@@ -128,7 +128,7 @@ void ProposalSystem::proposeUsbResponse(const String& deviceId, const String& re
     entry["reason"] = reason;
     entry["approved"] = false;
     entry["requires_approval"] = true;
-    entry["path_scope"] = "/ai";
+    entry["path_scope"] = "/Flic";
 
     SdManager::writeJSON(kProposalsPath, document);
     if (memoryManager_ != nullptr) {
@@ -152,7 +152,7 @@ void ProposalSystem::proposeUsbCapability(const String& deviceId, const String& 
     entry["reason"] = reason;
     entry["approved"] = false;
     entry["requires_approval"] = true;
-    entry["path_scope"] = "/ai";
+    entry["path_scope"] = "/Flic";
 
     SdManager::writeJSON(kProposalsPath, document);
     if (memoryManager_ != nullptr) {
@@ -176,7 +176,7 @@ void ProposalSystem::proposeUsbSensor(const String& deviceId, const String& sens
     entry["reason"] = reason;
     entry["approved"] = false;
     entry["requires_approval"] = true;
-    entry["path_scope"] = "/ai";
+    entry["path_scope"] = "/Flic";
 
     SdManager::writeJSON(kProposalsPath, document);
     if (memoryManager_ != nullptr) {
@@ -299,7 +299,7 @@ bool ProposalSystem::isValidUsbCommandProposal(const JsonObject& entry, const St
     if (!requiresApproval) {
         return false;
     }
-    if (pathScope != "/ai") {
+    if (pathScope != "/Flic") {
         return false;
     }
 

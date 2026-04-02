@@ -87,6 +87,318 @@
 				"ai/scripts/tmp_decode_addrs.py"
 			],
 			"group": "build"
+		},
+		{
+			"label": "AnimationBuilder: Install deps",
+			"type": "shell",
+			"command": "python",
+			"args": [
+				"-m",
+				"pip",
+				"install",
+				"-r",
+				"tools/animation_builder/requirements.txt"
+			]
+		},
+		{
+			"label": "AnimationBuilder: Compile check",
+			"type": "shell",
+			"command": "python",
+			"args": [
+				"-m",
+				"compileall",
+				"tools/animation_builder"
+			]
+		},
+		{
+			"label": "AnimationBuilder: Check ComfyUI",
+			"type": "shell",
+			"command": "python",
+			"args": [
+				"-c",
+				"import urllib.request;print(urllib.request.urlopen('http://127.0.0.1:8188/system_stats',timeout=3).status)"
+			]
+		},
+		{
+			"label": "AnimationBuilder: Check ComfyUI",
+			"type": "shell",
+			"command": "python",
+			"args": [
+				"-c",
+				"import urllib.request;print(urllib.request.urlopen(\"http://127.0.0.1:8188/system_stats\",timeout=3).status)"
+			]
+		},
+		{
+			"label": "AnimationBuilder: CLI help",
+			"type": "shell",
+			"command": "python",
+			"args": [
+				"-m",
+				"tools.animation_builder.generate_animation",
+				"--help"
+			]
+		},
+		{
+			"label": "AnimationBuilder: Generate blink",
+			"type": "shell",
+			"command": "python",
+			"args": [
+				"-m",
+				"tools.animation_builder.generate_animation",
+				"blink"
+			]
+		},
+		{
+			"label": "AnimationBuilder: Check Comfy Port",
+			"type": "shell",
+			"command": "python",
+			"args": [
+				"-c",
+				"import socket;s=socket.socket();print('OPEN' if s.connect_ex((\"127.0.0.1\",8188))==0 else 'CLOSED')"
+			]
+		},
+		{
+			"label": "AnimationBuilder: Check Comfy Port",
+			"type": "shell",
+			"command": "python",
+			"args": [
+				"-c",
+				"import socket;s=socket.socket();print(\"OPEN\" if s.connect_ex((\"127.0.0.1\",8188))==0 else \"CLOSED\")"
+			]
+		},
+		{
+			"label": "AnimationBuilder: Check Comfy Script",
+			"type": "shell",
+			"command": "python",
+			"args": [
+				"-m",
+				"tools.animation_builder.check_comfy"
+			]
+		},
+		{
+			"label": "AnimationBuilder: Generate blink (preflight)",
+			"type": "shell",
+			"command": "python",
+			"args": [
+				"-m",
+				"tools.animation_builder.generate_animation",
+				"blink"
+			]
+		},
+		{
+			"label": "AnimationBuilder: Compile single",
+			"type": "shell",
+			"command": "python",
+			"args": [
+				"-m",
+				"compileall",
+				"tools/animation_builder/generate_animation.py"
+			]
+		},
+		{
+			"label": "AnimationBuilder: Check Comfy Script",
+			"type": "shell",
+			"command": "python",
+			"args": [
+				"-m",
+				"tools.animation_builder.check_comfy"
+			]
+		},
+		{
+			"label": "AnimationBuilder: Generate blink wait",
+			"type": "shell",
+			"command": "python",
+			"args": [
+				"-m",
+				"tools.animation_builder.generate_animation",
+				"blink",
+				"--wait-for-comfy",
+				"30"
+			]
+		},
+		{
+			"label": "AnimationBuilder: Compile check",
+			"type": "shell",
+			"command": "python",
+			"args": [
+				"-m",
+				"compileall",
+				"tools/animation_builder"
+			]
+		},
+		{
+			"label": "Git status and remote",
+			"type": "shell",
+			"command": "git",
+			"args": [
+				"status",
+				"--short",
+				"--branch"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "Git remote",
+			"type": "shell",
+			"command": "git",
+			"args": [
+				"remote",
+				"-v"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "Git branch",
+			"type": "shell",
+			"command": "git",
+			"args": [
+				"branch",
+				"--show-current"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "Git add all",
+			"type": "shell",
+			"command": "git",
+			"args": [
+				"add",
+				"-A"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "Git commit",
+			"type": "shell",
+			"command": "git",
+			"args": [
+				"commit",
+				"-m",
+				"Add ComfyUI automation layer, wait-runner, health checks, and animation_builder updates"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "Git head hash",
+			"type": "shell",
+			"command": "git",
+			"args": [
+				"rev-parse",
+				"HEAD"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "Git status after commit",
+			"type": "shell",
+			"command": "git",
+			"args": [
+				"status",
+				"--short",
+				"--branch"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "Git amend tasks.json",
+			"type": "shell",
+			"command": "git",
+			"args": [
+				"add",
+				".vscode/tasks.json"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "Git amend commit",
+			"type": "shell",
+			"command": "git",
+			"args": [
+				"commit",
+				"--amend",
+				"--no-edit"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "Git push main",
+			"type": "shell",
+			"command": "git",
+			"args": [
+				"push",
+				"origin",
+				"main"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "Git final hash",
+			"type": "shell",
+			"command": "git",
+			"args": [
+				"rev-parse",
+				"HEAD"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "Git final status",
+			"type": "shell",
+			"command": "git",
+			"args": [
+				"status",
+				"--short",
+				"--branch"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "Git final remote",
+			"type": "shell",
+			"command": "git",
+			"args": [
+				"remote",
+				"-v"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "Git stage vscode",
+			"type": "shell",
+			"command": "git",
+			"args": [
+				"add",
+				".vscode/tasks.json"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
 		}
 	]
 }

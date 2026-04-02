@@ -10,7 +10,7 @@
 
 namespace Flic {
 namespace {
-constexpr const char* kPersonalitySeedPath = "/ai/memory/personality_seed.json";
+constexpr const char* kPersonalitySeedPath = "/Flic/memory/personality_seed.json";
 Adafruit_NeoPixel* gExternalStrip = nullptr;
 
 struct EmotionLedColor {

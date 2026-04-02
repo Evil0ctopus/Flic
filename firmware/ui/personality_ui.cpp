@@ -1,5 +1,6 @@
 #include "personality_ui.h"
 
+#include "../engine/face_engine.h"
 #include "../engine/emotion_engine.h"
 #include "../subsystems/light_engine.h"
 
@@ -21,9 +22,10 @@ float clamp01(float value) {
 }
 }  // namespace
 
-bool PersonalityUI::begin(EmotionEngine* emotionEngine, LightEngine* lightEngine) {
+bool PersonalityUI::begin(EmotionEngine* emotionEngine, LightEngine* lightEngine, FaceEngine* faceEngine) {
     emotionEngine_ = emotionEngine;
     lightEngine_ = lightEngine;
+    faceEngine_ = faceEngine;
     lastBlinkMs_ = millis();
     blinkIntervalMs_ = 2400;
     blinkHoldMs_ = 140;
@@ -74,6 +76,15 @@ void PersonalityUI::update(bool animationPlaying) {
 }
 
 void PersonalityUI::showExpression(const String& expression) {
+    if (faceEngine_ != nullptr) {
+        if (expression == "idle_breathing") {
+            faceEngine_->idlePulse();
+        } else {
+            faceEngine_->play(expression);
+        }
+        return;
+    }
+
     if (kDisableDisplayRendering) {
         return;
     }
@@ -157,6 +168,11 @@ void PersonalityUI::showCommandRejected(const String& command) {
 }
 
 void PersonalityUI::renderFace(const String& emotion) {
+    if (faceEngine_ != nullptr) {
+        faceEngine_->setEmotion(emotion);
+        return;
+    }
+
     if (kDisableDisplayRendering) {
         if (lightEngine_ != nullptr) {
             lightEngine_->emotionColor(emotion);

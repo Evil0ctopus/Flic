@@ -7,6 +7,7 @@ namespace Flic {
 class LightEngine;
 class AnimationEngine;
 class MemoryManager;
+class FaceEngine;
 
 enum class EmotionState : uint8_t {
     Calm = 0,
@@ -17,7 +18,10 @@ enum class EmotionState : uint8_t {
 
 class EmotionEngine {
 public:
-    bool begin(LightEngine* lightEngine, MemoryManager* memoryManager, AnimationEngine* animationEngine = nullptr);
+    bool begin(LightEngine* lightEngine,
+               MemoryManager* memoryManager,
+               AnimationEngine* animationEngine = nullptr,
+               FaceEngine* faceEngine = nullptr);
     void setEmotionBias(float bias);
     void setEmotion(const String& emotion);
     void nudgeEmotion(const String& emotion, float strength);
@@ -46,6 +50,7 @@ private:
     LightEngine* lightEngine_ = nullptr;
     AnimationEngine* animationEngine_ = nullptr;
     MemoryManager* memoryManager_ = nullptr;
+    FaceEngine* faceEngine_ = nullptr;
     String currentEmotion_ = "calm";
     String targetEmotion_ = "calm";
     float emotionBias_ = 0.0f;

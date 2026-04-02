@@ -1,24 +1,25 @@
 #include "learning_engine.h"
 
 #include "device_learning.h"
+#include "face_engine.h"
 #include "memory_manager.h"
 #include "../subsystems/sd_manager.h"
 
 #include <ArduinoJson.h>
 
 namespace {
-constexpr const char* kMemoryIndexPath = "/ai/memory/memory_index.json";
+constexpr const char* kMemoryIndexPath = "/Flic/memory/memory_index.json";
 constexpr size_t kMaxLearningEvents = 48;
 constexpr unsigned long kVoicePersistCooldownMs = 1200;
-// v0.1 keeps learning persistence RAM-only to avoid SD stalls and preserve boot stability.
-constexpr bool kDisableSdPersistence = true;
+constexpr bool kDisableSdPersistence = false;
 }
 
 namespace Flic {
 
-bool LearningEngine::begin(MemoryManager* memoryManager, DeviceLearning* deviceLearning) {
+bool LearningEngine::begin(MemoryManager* memoryManager, DeviceLearning* deviceLearning, FaceEngine* faceEngine) {
     memoryManager_ = memoryManager;
     deviceLearning_ = deviceLearning;
+    faceEngine_ = faceEngine;
 
     if (kDisableSdPersistence) {
         return true;
@@ -40,6 +41,9 @@ bool LearningEngine::begin(MemoryManager* memoryManager, DeviceLearning* deviceL
 
 void LearningEngine::observeTouch(const String& gesture) {
     ++touchCount_;
+    if (faceEngine_ != nullptr) {
+        faceEngine_->setEmotion("curious");
+    }
     if (memoryManager_ != nullptr) {
         memoryManager_->recordEvent("learn_touch", gesture);
     }
@@ -52,6 +56,9 @@ void LearningEngine::observeVoice(const String& command) {
     }
 
     ++voiceCount_;
+    if (faceEngine_ != nullptr) {
+        faceEngine_->setEmotion("curious");
+    }
     if (memoryManager_ != nullptr) {
         memoryManager_->recordEvent("learn_voice", command);
     }
@@ -83,6 +90,9 @@ bool LearningEngine::shouldPersistVoiceCommand(const String& command) {
 
 void LearningEngine::observeMotion(const String& motionEvent) {
     ++motionCount_;
+    if (faceEngine_ != nullptr) {
+        faceEngine_->setEmotion("curious");
+    }
     if (memoryManager_ != nullptr) {
         memoryManager_->recordEvent("learn_motion", motionEvent);
     }
@@ -93,6 +103,9 @@ void LearningEngine::observeUsb(const String& deviceId, const String& message) {
     ++usbCount_;
     if (deviceLearning_ != nullptr) {
         deviceLearning_->processMessage(deviceId, message);
+    }
+    if (faceEngine_ != nullptr) {
+        faceEngine_->setEmotion("curious");
     }
     if (memoryManager_ != nullptr) {
         memoryManager_->recordEvent("learn_usb", deviceId + ":" + message);

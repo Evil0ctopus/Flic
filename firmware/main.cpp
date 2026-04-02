@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include <ArduinoJson.h>
 #include <M5Unified.h>
+#include <vector>
 
 #include "config.h"
 #include "config_webui.h"
@@ -18,11 +19,14 @@
 #include "engine/environment_light_engine.h"
 #include "engine/imu_engine.h"
 #include "engine/learning_engine.h"
+#include "engine/face_engine.h"
+#include "engine/face_settings_manager.h"
 #include "engine/milestone_engine.h"
 #include "engine/animation_engine.h"
 #include "engine/idle_behavior.h"
 #include "engine/memory_manager.h"
 #include "engine/proposal_system.h"
+#include "engine/settings_manager.h"
 #include "subsystems/light_engine.h"
 #include "subsystems/sd_manager.h"
 #include "subsystems/usb_engine.h"
@@ -49,6 +53,11 @@ struct RuntimeSettings {
     bool webHeartbeatEnabled = true;
     bool imuEventsEnabled = true;
     bool usbEventsEnabled = true;
+    String voiceModel = "";
+    float voiceSpeed = 1.0f;
+    float voicePitch = 1.0f;
+    float voiceClarity = 1.0f;
+    bool fallbackVoiceEnabled = true;
 };
 
 Flic::AnimationEngine animationEngine;
@@ -61,6 +70,8 @@ Flic::IdleBehavior idleBehavior;
 Flic::UsbEngine usbEngine;
 Flic::DeviceLearning deviceLearning;
 Flic::LearningEngine learningEngine;
+Flic::FaceEngine faceEngine;
+Flic::FaceSettingsManager faceSettingsManager;
 Flic::MilestoneEngine milestoneEngine;
 Flic::TextBubbles textBubbles;
 Flic::CommunicationEngine communicationEngine;
@@ -74,9 +85,10 @@ Flic::WebUiEngine webUiEngine;
 Flic::CameraEngine cameraEngine;
 Flic::ImuEngine imuEngine;
 Flic::EnvironmentLightEngine environmentLightEngine;
+Flic::SettingsManager settingsManager;
 RuntimeSettings runtimeSettings;
 constexpr const char* kAnimationName = "flic_first_animation.json";
-constexpr const char* kFirstAnimationFlagPath = "/ai/memory/first_animation_created.flag";
+constexpr const char* kFirstAnimationFlagPath = "/Flic/memory/first_animation_created.flag";
 constexpr const char* kUsbCdcLabel = "usb_cdc";
 constexpr const char* kDeviceIdPrefix = "DEVICE_ID:";
 constexpr size_t kDeviceIdPrefixLength = 10;
@@ -164,7 +176,7 @@ String composeWebUiHelpMessage() {
     }
 
     if (webUiEngine.apMode()) {
-        String msg = "AP Mode\nSSID: Flic-Setup\nPW: flic1234\nURL: http://";
+        String msg = "AP Mode\nSSID: Flic-Setup\nPW: flic-dev-only\nURL: http://";
         msg += webUiEngine.localIp().toString();
         msg += ":";
         msg += String(Flic::kWebUiHttpPort);
@@ -176,9 +188,53 @@ String composeWebUiHelpMessage() {
     msg += ":";
     msg += String(Flic::kWebUiHttpPort);
     msg += "\nSetup AP: Flic-Setup";
-    msg += "\nPW: flic1234";
+    msg += "\nPW: flic-dev-only";
     msg += "\nAP URL: http://192.168.4.1";
     return msg;
+}
+
+String composeVoiceModelsJsonArray() {
+    const std::vector<String> voices = audioOutput.listVoices();
+    String payload = "[";
+    for (size_t i = 0; i < voices.size(); ++i) {
+        if (i > 0) {
+            payload += ",";
+        }
+        payload += "\"";
+        payload += voices[i];
+        payload += "\"";
+    }
+    payload += "]";
+    return payload;
+}
+
+String composeFaceSettingsJson() {
+    String payload = "{\"ok\":true,\"settings\":";
+    payload += faceEngine.settingsJson();
+    payload += ",\"styles\":";
+    payload += faceEngine.stylesJson();
+    payload += "}";
+    return payload;
+}
+
+String composeFaceStylesJson() {
+    return faceEngine.stylesJson();
+}
+
+String composeFaceAnimationsJson(const String& style) {
+    return faceEngine.animationsJson(style);
+}
+
+String composeFaceAnimationsCatalogJson() {
+    return faceEngine.animationsCatalogJson();
+}
+
+String composeFaceValidateJson() {
+    return faceEngine.validateAnimationSetJson();
+}
+
+String composeFaceSnapshotPath() {
+    return faceEngine.currentFramePath();
 }
 
 String composeWebUiStatus() {
@@ -196,7 +252,18 @@ String composeWebUiStatus() {
     payload += String(runtimeSettings.volume);
     payload += ",\"voice_style\":\"";
     payload += runtimeSettings.voiceStyle;
-    payload += "\"";
+    payload += "\",\"voice_model\":\"";
+    payload += runtimeSettings.voiceModel;
+    payload += "\",\"voice_speed\":";
+    payload += String(runtimeSettings.voiceSpeed, 2);
+    payload += ",\"voice_pitch\":";
+    payload += String(runtimeSettings.voicePitch, 2);
+    payload += ",\"voice_clarity\":";
+    payload += String(runtimeSettings.voiceClarity, 2);
+    payload += ",\"fallback_voice\":";
+    payload += runtimeSettings.fallbackVoiceEnabled ? "true" : "false";
+    payload += ",\"available_voices\":";
+    payload += composeVoiceModelsJsonArray();
     payload += ",\"personality\":{\"energy\":";
     payload += String(runtimeSettings.personalityEnergy, 2);
     payload += ",\"curiosity\":";
@@ -270,10 +337,20 @@ void sendWebUiHookEvent(const String& type, const String& payload) {
     webUiEngine.sendEvent(type, payload);
 }
 
+void onTtsAmplitudeEnvelope(float amplitude, void* context) {
+    (void)context;
+    faceEngine.setSpeakingAmplitude(amplitude);
+}
+
 void applyRuntimeSettings() {
     lightEngine.setBrightness(runtimeSettings.brightness);
     audioOutput.setVolume(runtimeSettings.volume);
     audioOutput.setVoiceStyle(runtimeSettings.voiceStyle);
+    audioOutput.setVoiceTuning(runtimeSettings.voiceSpeed, runtimeSettings.voicePitch, runtimeSettings.voiceClarity);
+    audioOutput.setFallbackVoiceEnabled(runtimeSettings.fallbackVoiceEnabled);
+    if (runtimeSettings.voiceModel.length() > 0) {
+        audioOutput.setActiveVoiceModel(runtimeSettings.voiceModel);
+    }
     personalityUi.setPersonality(runtimeSettings.personalityEnergy, runtimeSettings.personalityCuriosity,
                                  runtimeSettings.personalityPatience);
     emotionEngine.setEmotionBias(runtimeSettings.emotionBias);
@@ -286,6 +363,236 @@ void applyRuntimeSettings() {
     } else {
         Flic::Debug::setRuntimeLogLevel(3);
     }
+}
+
+bool readNumericRange(JsonVariantConst value, float minimumValue, float maximumValue, float& output);
+
+bool handleWebUiFacePreview(const String& requestJson, String& responseJson);
+bool handleWebUiFaceSetStyle(const String& requestJson, String& responseJson);
+bool handleWebUiFaceSetAnimation(const String& requestJson, String& responseJson);
+bool handleWebUiFacePlay(const String& requestJson, String& responseJson);
+bool handleWebUiFaceSetEmotion(const String& requestJson, String& responseJson);
+bool handleWebUiFaceReload(const String& requestJson, String& responseJson);
+
+bool handleWebUiFaceSettings(const String& requestJson, String& responseJson) {
+    JsonDocument document;
+    const DeserializationError error = deserializeJson(document, requestJson);
+    if (error || !document.is<JsonObject>()) {
+        responseJson = String("{\"ok\":false,\"error\":\"invalid_face_settings_json\"") + (error ? String(",\"message\":\"") + error.c_str() + "\"" : "") + "}";
+        return false;
+    }
+
+    JsonObject root = document.as<JsonObject>();
+    JsonVariant nested = root["settings"];
+    if (nested.is<JsonObject>()) {
+        root = nested.as<JsonObject>();
+    }
+
+    Flic::FaceSettings next = faceSettingsManager.current();
+    bool changed = false;
+
+    if (!root["active_style"].isNull()) {
+        if (!root["active_style"].is<const char*>()) {
+            responseJson = "{\"ok\":false,\"error\":\"active_style_must_be_string\"}";
+            return false;
+        }
+        next.activeStyle = String(root["active_style"].as<const char*>());
+        next.activeStyle.trim();
+        if (next.activeStyle.length() == 0) {
+            next.activeStyle = "default";
+        }
+        if (!faceEngine.setStyle(next.activeStyle)) {
+            next.activeStyle = "default";
+        }
+        changed = true;
+    }
+
+    if (!root["blink_speed"].isNull()) {
+        float value = 0.0f;
+        if (!readNumericRange(root["blink_speed"], 0.25f, 4.0f, value)) {
+            responseJson = "{\"ok\":false,\"error\":\"blink_speed_must_be_number_0_25_4_0\"}";
+            return false;
+        }
+        next.blinkSpeed = value;
+        changed = true;
+    }
+
+    if (!root["idle_enabled"].isNull()) {
+        if (!root["idle_enabled"].is<bool>()) {
+            responseJson = "{\"ok\":false,\"error\":\"idle_enabled_must_be_boolean\"}";
+            return false;
+        }
+        next.idleEnabled = root["idle_enabled"].as<bool>();
+        changed = true;
+    }
+
+    if (!root["glow_intensity"].isNull()) {
+        float value = 0.0f;
+        if (!readNumericRange(root["glow_intensity"], 0.0f, 1.0f, value)) {
+            responseJson = "{\"ok\":false,\"error\":\"glow_intensity_must_be_number_0_1\"}";
+            return false;
+        }
+        next.glowIntensity = value;
+        changed = true;
+    }
+
+    if (!root["eye_color"].isNull()) {
+        if (!root["eye_color"].is<const char*>()) {
+            responseJson = "{\"ok\":false,\"error\":\"eye_color_must_be_string\"}";
+            return false;
+        }
+        next.eyeColor = String(root["eye_color"].as<const char*>());
+        next.eyeColor.trim();
+        changed = true;
+    }
+
+    if (!root["ai_can_modify"].isNull()) {
+        if (!root["ai_can_modify"].is<bool>()) {
+            responseJson = "{\"ok\":false,\"error\":\"ai_can_modify_must_be_boolean\"}";
+            return false;
+        }
+        next.aiCanModify = root["ai_can_modify"].as<bool>();
+        changed = true;
+    }
+
+    if (!root["ai_can_create"].isNull()) {
+        if (!root["ai_can_create"].is<bool>()) {
+            responseJson = "{\"ok\":false,\"error\":\"ai_can_create_must_be_boolean\"}";
+            return false;
+        }
+        next.aiCanCreate = root["ai_can_create"].as<bool>();
+        changed = true;
+    }
+
+    if (!changed) {
+        responseJson = "{\"ok\":false,\"error\":\"no_valid_face_settings_provided\"}";
+        return false;
+    }
+
+    faceSettingsManager.apply(next);
+    responseJson = "{\"ok\":true,\"applied\":true,\"persisted\":true}";
+    return true;
+}
+
+bool handleWebUiFacePreview(const String& requestJson, String& responseJson) {
+    JsonDocument document;
+    const DeserializationError error = deserializeJson(document, requestJson);
+    if (error || !document.is<JsonObject>()) {
+        responseJson = "{\"ok\":false,\"error\":\"invalid_face_preview_json\"}";
+        return false;
+    }
+
+    JsonObject root = document.as<JsonObject>();
+    String style = root["style"] | faceEngine.activeStyle();
+    String animation = root["animation"] | "idle";
+    style.trim();
+    animation.trim();
+    if (style.length() == 0) {
+        style = "default";
+    }
+    if (animation.length() == 0) {
+        animation = "idle";
+    }
+
+    faceEngine.loadAnimationSet(style);
+    faceEngine.setStyle(style);
+    const bool played = faceEngine.playAnimation(animation);
+    if (!played) {
+        faceEngine.playAnimation("idle");
+        responseJson = "{\"ok\":false,\"fallback\":\"idle\"}";
+        return false;
+    }
+
+    responseJson = "{\"ok\":true,\"preview\":true}";
+    return true;
+}
+
+bool handleWebUiFaceSetStyle(const String& requestJson, String& responseJson) {
+    JsonDocument document;
+    const DeserializationError error = deserializeJson(document, requestJson);
+    if (error || !document.is<JsonObject>()) {
+        responseJson = "{\"ok\":false,\"error\":\"invalid_face_set_style_json\"}";
+        return false;
+    }
+
+    JsonObject root = document.as<JsonObject>();
+    String style = root["style"] | "default";
+    style.trim();
+    if (style.length() == 0) {
+        responseJson = "{\"ok\":false,\"error\":\"missing_style\"}";
+        return false;
+    }
+
+    if (!faceEngine.setStyle(style)) {
+        responseJson = "{\"ok\":false,\"error\":\"style_not_found\"}";
+        return false;
+    }
+
+    Flic::FaceSettings settings = faceSettingsManager.current();
+    settings.activeStyle = style;
+    faceSettingsManager.apply(settings);
+    responseJson = "{\"ok\":true,\"persisted\":true}";
+    return true;
+}
+
+bool handleWebUiFaceSetAnimation(const String& requestJson, String& responseJson) {
+    JsonDocument document;
+    const DeserializationError error = deserializeJson(document, requestJson);
+    if (error || !document.is<JsonObject>()) {
+        responseJson = "{\"ok\":false,\"error\":\"invalid_face_set_animation_json\"}";
+        return false;
+    }
+
+    JsonObject root = document.as<JsonObject>();
+    String style = root["style"] | faceEngine.activeStyle();
+    String animation = root["animation"] | "idle";
+    style.trim();
+    animation.trim();
+
+    if (style.length() > 0) {
+        faceEngine.loadAnimationSet(style);
+        faceEngine.setStyle(style);
+    }
+
+    if (!faceEngine.play(animation)) {
+        responseJson = "{\"ok\":false,\"error\":\"animation_not_found\",\"fallback\":\"idle\"}";
+        faceEngine.play("idle");
+        return false;
+    }
+
+    responseJson = "{\"ok\":true,\"applied\":true}";
+    return true;
+}
+
+bool handleWebUiFacePlay(const String& requestJson, String& responseJson) {
+    return handleWebUiFaceSetAnimation(requestJson, responseJson);
+}
+
+bool handleWebUiFaceSetEmotion(const String& requestJson, String& responseJson) {
+    JsonDocument document;
+    const DeserializationError error = deserializeJson(document, requestJson);
+    if (error || !document.is<JsonObject>()) {
+        responseJson = "{\"ok\":false,\"error\":\"invalid_face_set_emotion_json\"}";
+        return false;
+    }
+
+    const String emotion = String(document["emotion"] | "neutral");
+    if (emotion.length() == 0) {
+        responseJson = "{\"ok\":false,\"error\":\"missing_emotion\"}";
+        return false;
+    }
+
+    emotionEngine.setEmotion(emotion);
+    faceEngine.setEmotion(emotion);
+    responseJson = "{\"ok\":true,\"emotion\":\"" + emotion + "\"}";
+    return true;
+}
+
+bool handleWebUiFaceReload(const String& requestJson, String& responseJson) {
+    (void)requestJson;
+    const bool ok = faceEngine.reloadActiveStyle();
+    responseJson = String("{\"ok\":") + (ok ? "true" : "false") + "}";
+    return ok;
 }
 
 float clampNeed(float value) {
@@ -515,6 +822,128 @@ bool readNumericRange(JsonVariantConst value, float minimumValue, float maximumV
     return true;
 }
 
+void persistRuntimeSettings() {
+    JsonDocument document;
+    document["_schema"] = "flic.settings.v1";
+    document["updated_at"] = millis();
+
+    JsonObject settings = document["settings"].to<JsonObject>();
+    settings["brightness"] = runtimeSettings.brightness;
+    settings["volume"] = runtimeSettings.volume;
+    settings["voice_style"] = runtimeSettings.voiceStyle;
+    settings["animation_speed"] = runtimeSettings.animationSpeed * 100.0f;
+    settings["emotion_bias"] = runtimeSettings.emotionBias * 100.0f;
+
+    JsonObject voice = settings["voice"].to<JsonObject>();
+    voice["model"] = runtimeSettings.voiceModel;
+    voice["speed"] = runtimeSettings.voiceSpeed;
+    voice["pitch"] = runtimeSettings.voicePitch;
+    voice["clarity"] = runtimeSettings.voiceClarity;
+    voice["fallback"] = runtimeSettings.fallbackVoiceEnabled;
+
+    JsonObject personality = settings["personality"].to<JsonObject>();
+    personality["energy"] = runtimeSettings.personalityEnergy * 100.0f;
+    personality["curiosity"] = runtimeSettings.personalityCuriosity * 100.0f;
+    personality["patience"] = runtimeSettings.personalityPatience * 100.0f;
+
+    JsonObject debug = settings["debug"].to<JsonObject>();
+    debug["enabled"] = runtimeSettings.debugEnabled;
+    debug["trace"] = runtimeSettings.traceEnabled;
+    debug["level"] = Flic::Debug::runtimeLogLevel();
+
+    JsonObject runtime = settings["runtime"].to<JsonObject>();
+    runtime["voice_input"] = runtimeSettings.voiceInputEnabled;
+    runtime["autonomy"] = runtimeSettings.autonomyEnabled;
+    runtime["web_heartbeat"] = runtimeSettings.webHeartbeatEnabled;
+    runtime["imu_events"] = runtimeSettings.imuEventsEnabled;
+    runtime["usb_events"] = runtimeSettings.usbEventsEnabled;
+
+    settingsManager.save(document);
+}
+
+void loadRuntimeSettings() {
+    JsonDocument document;
+    if (!settingsManager.load(document)) {
+        return;
+    }
+
+    JsonObject root = document.as<JsonObject>();
+    if (root.isNull()) {
+        return;
+    }
+
+    JsonObject settings = root["settings"].as<JsonObject>();
+    if (settings.isNull()) {
+        settings = root;
+    }
+
+    float numericValue = 0.0f;
+    if (readNumericRange(settings["brightness"], 0.0f, 100.0f, numericValue)) {
+        runtimeSettings.brightness = static_cast<uint8_t>(numericValue + 0.5f);
+    }
+    if (readNumericRange(settings["volume"], 0.0f, 255.0f, numericValue)) {
+        runtimeSettings.volume = static_cast<uint8_t>(numericValue + 0.5f);
+    }
+
+    const char* voiceStyle = settings["voice_style"] | nullptr;
+    if (voiceStyle != nullptr) {
+        runtimeSettings.voiceStyle = String(voiceStyle);
+    }
+
+    if (readNumericRange(settings["animation_speed"], 25.0f, 400.0f, numericValue)) {
+        runtimeSettings.animationSpeed = numericValue / 100.0f;
+    }
+    if (readNumericRange(settings["emotion_bias"], -100.0f, 100.0f, numericValue)) {
+        runtimeSettings.emotionBias = numericValue / 100.0f;
+    }
+
+    JsonObject personality = settings["personality"].as<JsonObject>();
+    if (!personality.isNull()) {
+        if (readNumericRange(personality["energy"], 0.0f, 100.0f, numericValue)) {
+            runtimeSettings.personalityEnergy = numericValue / 100.0f;
+        }
+        if (readNumericRange(personality["curiosity"], 0.0f, 100.0f, numericValue)) {
+            runtimeSettings.personalityCuriosity = numericValue / 100.0f;
+        }
+        if (readNumericRange(personality["patience"], 0.0f, 100.0f, numericValue)) {
+            runtimeSettings.personalityPatience = numericValue / 100.0f;
+        }
+    }
+
+    JsonObject debug = settings["debug"].as<JsonObject>();
+    if (!debug.isNull()) {
+        runtimeSettings.debugEnabled = debug["enabled"] | runtimeSettings.debugEnabled;
+        runtimeSettings.traceEnabled = debug["trace"] | runtimeSettings.traceEnabled;
+    }
+
+    JsonObject runtime = settings["runtime"].as<JsonObject>();
+    if (!runtime.isNull()) {
+        runtimeSettings.voiceInputEnabled = runtime["voice_input"] | runtimeSettings.voiceInputEnabled;
+        runtimeSettings.autonomyEnabled = runtime["autonomy"] | runtimeSettings.autonomyEnabled;
+        runtimeSettings.webHeartbeatEnabled = runtime["web_heartbeat"] | runtimeSettings.webHeartbeatEnabled;
+        runtimeSettings.imuEventsEnabled = runtime["imu_events"] | runtimeSettings.imuEventsEnabled;
+        runtimeSettings.usbEventsEnabled = runtime["usb_events"] | runtimeSettings.usbEventsEnabled;
+    }
+
+    JsonObject voice = settings["voice"].as<JsonObject>();
+    if (!voice.isNull()) {
+        const char* model = voice["model"] | nullptr;
+        if (model != nullptr) {
+            runtimeSettings.voiceModel = String(model);
+        }
+        if (readNumericRange(voice["speed"], 0.5f, 2.0f, numericValue)) {
+            runtimeSettings.voiceSpeed = numericValue;
+        }
+        if (readNumericRange(voice["pitch"], 0.5f, 2.0f, numericValue)) {
+            runtimeSettings.voicePitch = numericValue;
+        }
+        if (readNumericRange(voice["clarity"], 0.5f, 2.0f, numericValue)) {
+            runtimeSettings.voiceClarity = numericValue;
+        }
+        runtimeSettings.fallbackVoiceEnabled = voice["fallback"] | runtimeSettings.fallbackVoiceEnabled;
+    }
+}
+
 bool handleWebUiSettings(const String& requestJson, String& responseJson) {
     JsonDocument document;
     const DeserializationError error = deserializeJson(document, requestJson);
@@ -577,6 +1006,116 @@ bool handleWebUiSettings(const String& requestJson, String& responseJson) {
         }
         nextSettings.voiceStyle = voiceStyle;
         changed = true;
+    }
+
+    if (!root["voice_model"].isNull()) {
+        if (!root["voice_model"].is<const char*>()) {
+            responseJson = "{\"ok\":false,\"error\":\"voice_model_must_be_string\"}";
+            return false;
+        }
+        nextSettings.voiceModel = String(root["voice_model"].as<const char*>());
+        nextSettings.voiceModel.trim();
+        if (nextSettings.voiceModel.length() > 0 && !audioOutput.setActiveVoiceModel(nextSettings.voiceModel)) {
+            responseJson = "{\"ok\":false,\"error\":\"voice_model_not_found_on_sd\"}";
+            return false;
+        }
+        changed = true;
+    }
+
+    if (!root["voice_speed"].isNull()) {
+        float voiceSpeed = 0.0f;
+        if (!readNumericRange(root["voice_speed"], 0.5f, 2.0f, voiceSpeed)) {
+            responseJson = "{\"ok\":false,\"error\":\"voice_speed_must_be_number_0_5_2_0\"}";
+            return false;
+        }
+        nextSettings.voiceSpeed = voiceSpeed;
+        changed = true;
+    }
+
+    if (!root["voice_pitch"].isNull()) {
+        float voicePitch = 0.0f;
+        if (!readNumericRange(root["voice_pitch"], 0.5f, 2.0f, voicePitch)) {
+            responseJson = "{\"ok\":false,\"error\":\"voice_pitch_must_be_number_0_5_2_0\"}";
+            return false;
+        }
+        nextSettings.voicePitch = voicePitch;
+        changed = true;
+    }
+
+    if (!root["voice_clarity"].isNull()) {
+        float voiceClarity = 0.0f;
+        if (!readNumericRange(root["voice_clarity"], 0.5f, 2.0f, voiceClarity)) {
+            responseJson = "{\"ok\":false,\"error\":\"voice_clarity_must_be_number_0_5_2_0\"}";
+            return false;
+        }
+        nextSettings.voiceClarity = voiceClarity;
+        changed = true;
+    }
+
+    if (!root["fallback_voice"].isNull()) {
+        if (!root["fallback_voice"].is<bool>()) {
+            responseJson = "{\"ok\":false,\"error\":\"fallback_voice_must_be_boolean\"}";
+            return false;
+        }
+        nextSettings.fallbackVoiceEnabled = root["fallback_voice"].as<bool>();
+        changed = true;
+    }
+
+    JsonVariant voice = root["voice"];
+    if (!voice.isNull()) {
+        if (!voice.is<JsonObjectConst>()) {
+            responseJson = "{\"ok\":false,\"error\":\"voice_must_be_object\"}";
+            return false;
+        }
+        JsonObject voiceObject = voice.as<JsonObject>();
+        if (!voiceObject["model"].isNull()) {
+            if (!voiceObject["model"].is<const char*>()) {
+                responseJson = "{\"ok\":false,\"error\":\"voice_model_must_be_string\"}";
+                return false;
+            }
+            nextSettings.voiceModel = String(voiceObject["model"].as<const char*>());
+            nextSettings.voiceModel.trim();
+            if (nextSettings.voiceModel.length() > 0 && !audioOutput.setActiveVoiceModel(nextSettings.voiceModel)) {
+                responseJson = "{\"ok\":false,\"error\":\"voice_model_not_found_on_sd\"}";
+                return false;
+            }
+            changed = true;
+        }
+        if (!voiceObject["speed"].isNull()) {
+            float value = 0.0f;
+            if (!readNumericRange(voiceObject["speed"], 0.5f, 2.0f, value)) {
+                responseJson = "{\"ok\":false,\"error\":\"voice_speed_must_be_number_0_5_2_0\"}";
+                return false;
+            }
+            nextSettings.voiceSpeed = value;
+            changed = true;
+        }
+        if (!voiceObject["pitch"].isNull()) {
+            float value = 0.0f;
+            if (!readNumericRange(voiceObject["pitch"], 0.5f, 2.0f, value)) {
+                responseJson = "{\"ok\":false,\"error\":\"voice_pitch_must_be_number_0_5_2_0\"}";
+                return false;
+            }
+            nextSettings.voicePitch = value;
+            changed = true;
+        }
+        if (!voiceObject["clarity"].isNull()) {
+            float value = 0.0f;
+            if (!readNumericRange(voiceObject["clarity"], 0.5f, 2.0f, value)) {
+                responseJson = "{\"ok\":false,\"error\":\"voice_clarity_must_be_number_0_5_2_0\"}";
+                return false;
+            }
+            nextSettings.voiceClarity = value;
+            changed = true;
+        }
+        if (!voiceObject["fallback"].isNull()) {
+            if (!voiceObject["fallback"].is<bool>()) {
+                responseJson = "{\"ok\":false,\"error\":\"fallback_voice_must_be_boolean\"}";
+                return false;
+            }
+            nextSettings.fallbackVoiceEnabled = voiceObject["fallback"].as<bool>();
+            changed = true;
+        }
     }
 
     if (!root["animation_speed"].isNull()) {
@@ -731,7 +1270,8 @@ bool handleWebUiSettings(const String& requestJson, String& responseJson) {
 
     runtimeSettings = nextSettings;
     applyRuntimeSettings();
-    responseJson = "{\"ok\":true,\"applied\":true}";
+    persistRuntimeSettings();
+    responseJson = "{\"ok\":true,\"applied\":true,\"persisted\":true}";
     return true;
 }
 
@@ -756,7 +1296,23 @@ bool handleWebUiCommand(const String& requestJson, String& responseJson) {
 
     String reply;
     String emotion = "calm";
-    if (lower.indexOf("voice style") >= 0 || lower.indexOf("voice") >= 0) {
+    if (lower.indexOf("preview face") >= 0 || lower.indexOf("face preview") >= 0) {
+        String previewStyle = faceSettingsManager.current().activeStyle;
+        if (lower.indexOf("soft_glow") >= 0) {
+            previewStyle = "soft_glow";
+        } else if (lower.indexOf("minimal") >= 0) {
+            previewStyle = "minimal";
+        } else if (lower.indexOf("custom") >= 0) {
+            previewStyle = "custom";
+        }
+        faceEngine.setStyle(previewStyle);
+        faceEngine.play("idle");
+        reply = String("Previewing face style: ") + previewStyle;
+        emotion = "curious";
+    } else if (lower.indexOf("preview voice") >= 0 || lower.indexOf("voice preview") >= 0) {
+        reply = "This is a preview of the selected voice pack.";
+        emotion = "happy";
+    } else if (lower.indexOf("voice style") >= 0 || lower.indexOf("voice") >= 0) {
         if (lower.indexOf("clear") >= 0) {
             runtimeSettings.voiceStyle = "clear";
             applyRuntimeSettings();
@@ -851,7 +1407,9 @@ void initializeStorage() {
     Flic::SdManager::configureBus();
     if (!Flic::SdManager::mount()) {
         Serial.println("Flic: continuing without SD-backed animations.");
+        return;
     }
+    settingsManager.begin();
 }
 
 void initializeWiFi() {
@@ -876,7 +1434,9 @@ void initializeWiFi() {
 
 void initializeCoreEngines() {
     memoryManager.begin();
-    emotionEngine.begin(&lightEngine, &memoryManager, &animationEngine);
+    faceEngine.begin();
+    faceSettingsManager.begin(&faceEngine);
+    emotionEngine.begin(&lightEngine, &memoryManager, &animationEngine, &faceEngine);
     if (kEnableUsbRuntime) {
         usbEngine.begin(Flic::kDefaultUsbBaud);
     }
@@ -887,11 +1447,12 @@ void initializeCoreEngines() {
     }
 
     proposalSystem.begin(&memoryManager, &emotionEngine);
-    personalityUi.begin(&emotionEngine, &lightEngine);
+    personalityUi.begin(&emotionEngine, &lightEngine, &faceEngine);
     deviceLearning.begin(&memoryManager, &proposalSystem);
-    learningEngine.begin(&memoryManager, &deviceLearning);
+    learningEngine.begin(&memoryManager, &deviceLearning, &faceEngine);
     textBubbles.begin();
-    communicationEngine.begin(&lightEngine, &personalityUi, &animationEngine, &emotionEngine, &memoryManager, &textBubbles, &voiceEngine);
+    communicationEngine.begin(&lightEngine, &personalityUi, &animationEngine, &emotionEngine, &memoryManager, &textBubbles,
+                              &voiceEngine, &faceEngine);
     if (kEnableMilestoneRuntime) {
         milestoneEngine.begin(&memoryManager, &animationEngine, &emotionEngine, &communicationEngine);
     }
@@ -899,7 +1460,8 @@ void initializeCoreEngines() {
 
 void initializeInteractionEngines() {
     touchEngine.begin(&touchInput);
-    voiceEngine.begin(&audioInput, &audioOutput);
+    voiceEngine.begin(&audioInput, &audioOutput, &faceEngine);
+    audioOutput.setAmplitudeEnvelopeHandler(onTtsAmplitudeEnvelope, nullptr);
     asrEngine.begin();
     cameraEngine.begin();
     if (!kDisableImuEngine) {
@@ -971,15 +1533,28 @@ void initializeRuntimeServices() {
         webUiEngine.setEnginesProvider(composeWebUiEngines);
         webUiEngine.setSettingsHandler(handleWebUiSettings);
         webUiEngine.setCommandHandler(handleWebUiCommand);
+        webUiEngine.setFaceSettingsProvider(composeFaceSettingsJson);
+        webUiEngine.setFaceSettingsHandler(handleWebUiFaceSettings);
+        webUiEngine.setFaceStylesProvider(composeFaceStylesJson);
+        webUiEngine.setFaceAnimationsCatalogProvider(composeFaceAnimationsCatalogJson);
+        webUiEngine.setFaceAnimationsProvider(composeFaceAnimationsJson);
+        webUiEngine.setFacePreviewHandler(handleWebUiFacePreview);
+        webUiEngine.setFaceSetStyleHandler(handleWebUiFaceSetStyle);
+        webUiEngine.setFaceSetAnimationHandler(handleWebUiFaceSetAnimation);
+        webUiEngine.setFacePlayHandler(handleWebUiFacePlay);
+        webUiEngine.setFaceSetEmotionHandler(handleWebUiFaceSetEmotion);
+        webUiEngine.setFaceReloadHandler(handleWebUiFaceReload);
+        webUiEngine.setFaceValidateProvider(composeFaceValidateJson);
+        webUiEngine.setFaceSnapshotPathProvider(composeFaceSnapshotPath);
         if (webUiEngine.begin(Flic::kWebUiSsid, Flic::kWebUiPassword, Flic::kWebUiHttpPort, Flic::kWebUiWsPort)) {
             Flic::WebUiEventHook::setSender(sendWebUiHookEvent);
             String webUiInfo = String("WebUI: http://") + webUiEngine.localIp().toString() + ":" + String(Flic::kWebUiHttpPort);
             if (webUiEngine.apMode()) {
                 Serial.println("Flic: WebUI AP fallback mode enabled.");
-                Serial.println("Flic: AP SSID=Flic-Setup password=flic1234");
+                Serial.println("Flic: AP SSID=Flic-Setup password=flic-dev-only");
                 Serial.println(webUiInfo);
                 if (kShowWebUiTextBubbles) {
-                    textBubbles.showMessage("WebUI AP mode\nSSID: Flic-Setup\nPW: flic1234\n" + webUiInfo, Flic::BubbleSize::Large, "curious");
+                    textBubbles.showMessage("WebUI AP mode\nSSID: Flic-Setup\nPW: flic-dev-only\n" + webUiInfo, Flic::BubbleSize::Large, "curious");
                 }
             } else {
                 Serial.println(String("Flic: WebUI ready at http://") + webUiEngine.localIp().toString());
@@ -1042,6 +1617,7 @@ void showEmergencyScreenIfEnabled() {
 
 void updateRuntimeEngines(float dtSeconds) {
     emotionEngine.updateEmotion(dtSeconds);
+    faceEngine.update(dtSeconds);
     communicationEngine.update();
     if (kEnableMilestoneRuntime) {
         milestoneEngine.update();
@@ -1096,6 +1672,7 @@ void handleTouchInput() {
 void handleVoiceInput() {
     String voiceCommand;
     if (voiceEngine.popVoiceCommand(voiceCommand)) {
+        faceEngine.play("listening");
         String normalizedVoice = voiceCommand;
         normalizedVoice.trim();
         normalizedVoice.toLowerCase();
@@ -1351,6 +1928,8 @@ void setup() {
     initializeStorage();
     initializeCoreEngines();
     initializeInteractionEngines();
+    loadRuntimeSettings();
+    applyRuntimeSettings();
     if (!kSafeBootMode) {
         initializeWiFi();
         initializeRuntimeServices();

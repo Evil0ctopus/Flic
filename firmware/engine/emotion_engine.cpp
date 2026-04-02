@@ -1,6 +1,7 @@
 #include "emotion_engine.h"
 
 #include "animation_engine.h"
+#include "face_engine.h"
 #include "../diagnostics/webui_event_hook.h"
 #include "memory_manager.h"
 #include "../subsystems/light_engine.h"
@@ -11,9 +12,8 @@
 
 namespace Flic {
 namespace {
-constexpr const char* kEmotionStatePath = "/ai/memory/emotion_state.json";
-// v0.1 keeps emotion persistence RAM-only to avoid SD stalls and preserve boot stability.
-constexpr bool kDisableSdPersistence = true;
+constexpr const char* kEmotionStatePath = "/Flic/memory/emotion_state.json";
+constexpr bool kDisableSdPersistence = false;
 constexpr float kMinimumStrength = 0.05f;
 constexpr float kStrongStrength = 0.7f;
 constexpr float kMinimumBias = -1.0f;
@@ -59,10 +59,14 @@ EmotionState stateFromString(const String& state) {
 }
 }  // namespace
 
-bool EmotionEngine::begin(LightEngine* lightEngine, MemoryManager* memoryManager, AnimationEngine* animationEngine) {
+bool EmotionEngine::begin(LightEngine* lightEngine,
+                          MemoryManager* memoryManager,
+                          AnimationEngine* animationEngine,
+                          FaceEngine* faceEngine) {
     lightEngine_ = lightEngine;
     animationEngine_ = animationEngine;
     memoryManager_ = memoryManager;
+    faceEngine_ = faceEngine;
 
     loadState();
     if (memoryManager_ != nullptr) {
@@ -394,6 +398,10 @@ void EmotionEngine::requestEmotion(const String& emotion, float strength, const 
 void EmotionEngine::onEmotionCommitted() {
     if (memoryManager_ != nullptr) {
         memoryManager_->recordEvent("emotion", currentEmotion_);
+    }
+
+    if (faceEngine_ != nullptr) {
+        faceEngine_->setEmotion(currentEmotion_);
     }
 
     WebUiEventHook::emit("emotion", String("{\"current\":\"") + currentEmotion_ + "\",\"target\":\"" + targetEmotion_ +

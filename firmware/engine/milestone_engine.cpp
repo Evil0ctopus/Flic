@@ -10,8 +10,8 @@
 
 namespace Flic {
 namespace {
-constexpr const char* kMilestonesPath = "/ai/memory/milestones.json";
-constexpr const char* kLegacyMilestonesPath = "/ai/memory/milestone_state.json";
+constexpr const char* kMilestonesPath = "/Flic/memory/milestones.json";
+constexpr const char* kLegacyMilestonesPath = "/Flic/memory/milestone_state.json";
 constexpr uint16_t kLevelStep = 3;
 }
 

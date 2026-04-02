@@ -6,10 +6,11 @@ namespace Flic {
 
 class EmotionEngine;
 class LightEngine;
+class FaceEngine;
 
 class PersonalityUI {
 public:
-    bool begin(EmotionEngine* emotionEngine, LightEngine* lightEngine);
+    bool begin(EmotionEngine* emotionEngine, LightEngine* lightEngine, FaceEngine* faceEngine = nullptr);
     void setPersonality(float energy, float curiosity, float patience);
     void update(bool animationPlaying);
     void showExpression(const String& expression);
@@ -26,6 +27,7 @@ private:
 
     EmotionEngine* emotionEngine_ = nullptr;
     LightEngine* lightEngine_ = nullptr;
+    FaceEngine* faceEngine_ = nullptr;
     float energy_ = 0.5f;
     float curiosity_ = 0.5f;
     float patience_ = 0.5f;

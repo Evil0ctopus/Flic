@@ -13,6 +13,14 @@ constexpr int kSdClockPin = 36;
 constexpr int kSdMosiPin = 35;
 constexpr int kSdMisoPin = 37;
 constexpr gpio_num_t kSdChipSelectPin = GPIO_NUM_4;
+constexpr const char* kFlicRootDir = "/Flic";
+constexpr const char* kFlicVoicesDir = "/Flic/voices";
+constexpr const char* kFlicMemoryDir = "/Flic/memory";
+constexpr const char* kFlicConfigDir = "/Flic/config";
+constexpr const char* kFlicLogsDir = "/Flic/logs";
+constexpr const char* kFlicAnimationsDir = "/Flic/animations";
+constexpr const char* kFlicSoundsDir = "/Flic/sounds";
+constexpr const char* kFlicFaceDir = "/Flic/animations/face";
 constexpr const char* kAiRootDir = "/ai";
 constexpr const char* kAiMemoryDir = "/ai/memory";
 constexpr const char* kAiAnimationsDir = "/ai/animations";
@@ -46,6 +54,16 @@ bool mount() {
         return false;
     }
 
+    SD.mkdir(kFlicRootDir);
+    SD.mkdir(kFlicVoicesDir);
+    SD.mkdir(kFlicMemoryDir);
+    SD.mkdir(kFlicConfigDir);
+    SD.mkdir(kFlicLogsDir);
+    SD.mkdir(kFlicAnimationsDir);
+    SD.mkdir(kFlicSoundsDir);
+    SD.mkdir(kFlicFaceDir);
+
+    // Keep legacy paths available to avoid breaking older SD contents.
     SD.mkdir(kAiRootDir);
     SD.mkdir(kAiMemoryDir);
     SD.mkdir(kAiAnimationsDir);
@@ -57,6 +75,16 @@ bool mount() {
 
 bool isMounted() {
     return gMounted;
+}
+
+bool ensureDirectory(const char* path) {
+    if (!gMounted || path == nullptr || path[0] == '\0') {
+        return false;
+    }
+    if (SD.exists(path)) {
+        return true;
+    }
+    return SD.mkdir(path);
 }
 
 bool fileExists(const char* path) {
@@ -116,6 +144,34 @@ bool writeJSON(const char* path, const JsonDocument& document) {
     const size_t bytesWritten = serializeJsonPretty(document, file);
     file.close();
     return bytesWritten > 0;
+}
+
+const char* rootDir() {
+    return kFlicRootDir;
+}
+
+const char* voicesDir() {
+    return kFlicVoicesDir;
+}
+
+const char* memoryDir() {
+    return kFlicMemoryDir;
+}
+
+const char* configDir() {
+    return kFlicConfigDir;
+}
+
+const char* logsDir() {
+    return kFlicLogsDir;
+}
+
+const char* animationsDir() {
+    return kFlicAnimationsDir;
+}
+
+const char* soundsDir() {
+    return kFlicSoundsDir;
 }
 
 }  // namespace SdManager

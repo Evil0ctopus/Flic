@@ -4,6 +4,7 @@
 #include <DNSServer.h>
 #include <WebServer.h>
 #include <WebSocketsServer.h>
+#include <SD.h>
 
 namespace Flic {
 
@@ -11,6 +12,7 @@ class WebUiEngine {
 public:
     using DataProvider = String (*)();
     using JsonProvider = String (*)();
+    using PathJsonProvider = String (*)(const String& pathArg);
     using ActionHandler = bool (*)(const String& requestJson, String& responseJson);
 
     bool begin(const char* ssid, const char* password, uint16_t httpPort = 80, uint16_t wsPort = 81);
@@ -22,6 +24,20 @@ public:
     void setEnginesProvider(JsonProvider provider);
     void setSettingsHandler(ActionHandler handler);
     void setCommandHandler(ActionHandler handler);
+    void setFaceSettingsProvider(JsonProvider provider);
+    void setFaceSettingsHandler(ActionHandler handler);
+    void setFaceStylesProvider(JsonProvider provider);
+    void setFaceAnimationsCatalogProvider(JsonProvider provider);
+    void setFaceAnimationsProvider(PathJsonProvider provider);
+    void setFacePreviewHandler(ActionHandler handler);
+    void setFaceSetStyleHandler(ActionHandler handler);
+    void setFaceSetAnimationHandler(ActionHandler handler);
+    void setFacePlayHandler(ActionHandler handler);
+    void setFaceSetEmotionHandler(ActionHandler handler);
+    void setFaceReloadHandler(ActionHandler handler);
+    void setFaceValidateProvider(JsonProvider provider);
+    void setFaceSnapshotPathProvider(DataProvider provider);
+    void setLogsProvider(JsonProvider provider);
 
     void broadcastJson(const String& json);
     void sendEvent(const String& type, const String& payload);
@@ -42,6 +58,27 @@ private:
     void handleApiEngines();
     void handleApiSettings();
     void handleApiCommand();
+    void handleApiFaceSettingsGet();
+    void handleApiFaceSettingsPost();
+    void handleApiFaceStyles();
+    void handleApiFaceAnimationsCatalog();
+    void handleApiFaceAnimations();
+    void handleApiFacePreview();
+    void handleApiFaceSetStyle();
+    void handleApiFaceSetAnimation();
+    void handleApiFacePlay();
+    void handleApiFaceSetEmotion();
+    void handleApiFaceReload();
+    void handleApiFaceValidate();
+    void handleApiFaceSnapshot();
+    void handleApiSdList();
+    void handleApiSdUpload();
+    void handleApiSdDelete();
+    void handleApiSdMkdir();
+    void handleApiSdRename();
+    void handleApiSdDownload();
+    void handleApiLogs();
+    void handleApiLogsClear();
     void handleApiWildcard();
     void handleWsInfo();
     bool handleCaptivePortalRedirect();
@@ -51,6 +88,11 @@ private:
     String defaultSensorsJson() const;
     String defaultEnginesJson() const;
     String readRequestBody() const;
+    String sanitizeSdPath(const String& input) const;
+    bool isSafeSdPath(const String& path) const;
+    String buildSdTreeJson(const String& path, uint8_t depth) const;
+    bool validatePngUpload(const String& path, String& reason) const;
+    void logSdOperation(const String& op, const String& path, bool ok, const String& detail = String()) const;
 
     DNSServer* dnsServer_ = nullptr;
     WebServer* httpServer_ = nullptr;
@@ -62,6 +104,26 @@ private:
     JsonProvider enginesProvider_ = nullptr;
     ActionHandler settingsHandler_ = nullptr;
     ActionHandler commandHandler_ = nullptr;
+    JsonProvider faceSettingsProvider_ = nullptr;
+    ActionHandler faceSettingsHandler_ = nullptr;
+    JsonProvider faceStylesProvider_ = nullptr;
+    JsonProvider faceAnimationsCatalogProvider_ = nullptr;
+    PathJsonProvider faceAnimationsProvider_ = nullptr;
+    ActionHandler facePreviewHandler_ = nullptr;
+    ActionHandler faceSetStyleHandler_ = nullptr;
+    ActionHandler faceSetAnimationHandler_ = nullptr;
+    ActionHandler facePlayHandler_ = nullptr;
+    ActionHandler faceSetEmotionHandler_ = nullptr;
+    ActionHandler faceReloadHandler_ = nullptr;
+    JsonProvider faceValidateProvider_ = nullptr;
+    DataProvider faceSnapshotPathProvider_ = nullptr;
+    JsonProvider logsProvider_ = nullptr;
+
+    String uploadTargetPath_;
+    File uploadFile_;
+    size_t uploadBytesReceived_ = 0;
+    bool uploadRejected_ = false;
+    String uploadRejectReason_;
 
     bool ready_ = false;
     bool wifiConnected_ = false;

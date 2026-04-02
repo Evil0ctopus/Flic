@@ -1,6 +1,7 @@
 #include "communication_engine.h"
 
 #include "animation_engine.h"
+#include "face_engine.h"
 #include "emotion_engine.h"
 #include "memory_manager.h"
 #include "voice_engine.h"
@@ -44,7 +45,8 @@ bool CommunicationEngine::begin(LightEngine* lightEngine,
                                 EmotionEngine* emotionEngine,
                                 MemoryManager* memoryManager,
                                 TextBubbles* textBubbles,
-                                VoiceEngine* voiceEngine) {
+                                VoiceEngine* voiceEngine,
+                                FaceEngine* faceEngine) {
     lightEngine_ = lightEngine;
     personalityUi_ = personalityUi;
     animationEngine_ = animationEngine;
@@ -52,6 +54,7 @@ bool CommunicationEngine::begin(LightEngine* lightEngine,
     memoryManager_ = memoryManager;
     textBubbles_ = textBubbles;
     voiceEngine_ = voiceEngine;
+    faceEngine_ = faceEngine;
     activeEmotion_ = "calm";
     lastNotifyMs_ = 0;
     lastNotifyMessage_ = "";
@@ -99,6 +102,10 @@ void CommunicationEngine::speakVoice(const String& msg) {
     const bool cooldownElapsed = (nowMs - lastVoiceSpeakMs) >= kVoiceSpeakCooldownMs;
 
     if (!kDisableVoiceAudioOutput && voiceEngine_ != nullptr && voiceWarm && !messageTooLong && cooldownElapsed) {
+        if (faceEngine_ != nullptr) {
+            faceEngine_->setSpeakingAmplitude(0.80f);
+            faceEngine_->play("speaking");
+        }
         voiceEngine_->speak(msg, activeEmotion_);
         lastVoiceSpeakMs = nowMs;
     }
@@ -113,6 +120,10 @@ void CommunicationEngine::speakEmotion(const String& emotion) {
 
     if (emotionEngine_ != nullptr) {
         emotionEngine_->setEmotion(activeEmotion_);
+    }
+
+    if (faceEngine_ != nullptr) {
+        faceEngine_->setEmotion(activeEmotion_);
     }
 
     if (lightEngine_ != nullptr) {
@@ -143,6 +154,9 @@ void CommunicationEngine::speakAnimation(const String& anim) {
         if (animationEngine_ != nullptr) {
             animationEngine_->playPreset("surprise");
         }
+        if (faceEngine_ != nullptr) {
+            faceEngine_->play("surprise");
+        }
         return;
     }
 
@@ -159,6 +173,9 @@ void CommunicationEngine::speakAnimation(const String& anim) {
         if (animationEngine_ != nullptr) {
             animationEngine_->playPreset("thinking_loop");
         }
+        if (faceEngine_ != nullptr) {
+            faceEngine_->play("thinking");
+        }
         return;
     }
 
@@ -172,6 +189,9 @@ void CommunicationEngine::speakAnimation(const String& anim) {
         }
         if (animationEngine_ != nullptr) {
             animationEngine_->playPreset("blink");
+        }
+        if (faceEngine_ != nullptr) {
+            faceEngine_->play("blink");
         }
         return;
     }
@@ -189,6 +209,9 @@ void CommunicationEngine::speakAnimation(const String& anim) {
                 animationEngine_->playPreset("idle_breathing");
             }
         }
+        if (faceEngine_ != nullptr) {
+            faceEngine_->play(anim);
+        }
         return;
     }
 
@@ -198,6 +221,11 @@ void CommunicationEngine::speakAnimation(const String& anim) {
             fileName += ".json";
         }
         animationEngine_->playAnimation(fileName.c_str());
+        return;
+    }
+
+    if (faceEngine_ != nullptr) {
+        faceEngine_->play(anim);
         return;
     }
 

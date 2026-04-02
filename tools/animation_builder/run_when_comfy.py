@@ -1,0 +1,56 @@
+from __future__ import annotations
+
+import argparse
+import sys
+import time
+from pathlib import Path
+
+if __package__ in (None, ""):
+    sys.path.append(str(Path(__file__).resolve().parents[2]))
+    from tools.animation_builder.comfy_api import ComfyApiError, check_server  # type: ignore
+    from tools.animation_builder.config import COMFY_API_URL  # type: ignore
+    from tools.animation_builder.generate_animation import generate_all, generate_animation  # type: ignore
+else:
+    from .comfy_api import ComfyApiError, check_server
+    from .config import COMFY_API_URL
+    from .generate_animation import generate_all, generate_animation
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Wait for ComfyUI then generate Flic animations")
+    parser.add_argument("--animation", default="blink", help="animation name to generate")
+    parser.add_argument("--all", action="store_true", help="generate all animation specs")
+    parser.add_argument("--api", default=COMFY_API_URL)
+    parser.add_argument("--poll", type=float, default=2.0)
+    parser.add_argument("--max-wait", type=float, default=0.0, help="seconds to wait (0 = wait forever)")
+    parser.add_argument("--seed", type=int, default=None)
+    args = parser.parse_args()
+
+    print(f"Waiting for ComfyUI at {args.api}...")
+    start = time.time()
+    while not check_server(api_url=args.api):
+        if args.max_wait > 0 and (time.time() - start) >= args.max_wait:
+            print("COMFY_DOWN")
+            raise SystemExit(1)
+        time.sleep(max(0.5, args.poll))
+
+    print("COMFY_READY")
+    print("ComfyUI reachable. Starting generation...")
+    try:
+        if args.all:
+            paths = generate_all(api_url=args.api, seed=args.seed)
+            for p in paths:
+                print(f"Generated: {p}")
+        else:
+            p = generate_animation(args.animation, api_url=args.api, seed=args.seed)
+            print(f"Generated: {p}")
+    except ComfyApiError as exc:
+        print(f"{exc.code}: {exc.message}")
+        raise SystemExit(2)
+    except Exception as exc:
+        print(f"GENERATION_FAILED: {type(exc).__name__}: {exc}")
+        raise SystemExit(3)
+
+
+if __name__ == "__main__":
+    main()

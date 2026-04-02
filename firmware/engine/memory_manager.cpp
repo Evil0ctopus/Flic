@@ -6,9 +6,8 @@
 
 namespace Flic {
 namespace {
-constexpr const char* kMemoryIndexPath = "/ai/memory/memory_index.json";
-// v0.1 keeps memory persistence RAM-only to avoid SD stalls and preserve boot stability.
-constexpr bool kDisableSdPersistence = true;
+constexpr const char* kMemoryIndexPath = "/Flic/memory/memory_index.json";
+constexpr bool kDisableSdPersistence = false;
 }
 
 bool MemoryManager::begin() {
