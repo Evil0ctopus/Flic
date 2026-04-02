@@ -8,6 +8,7 @@ bool TextBubbles::begin() {
     visible_ = false;
     showStartMs_ = 0;
     showDurationMs_ = 0;
+    hasPreviousBubble_ = false;
     return true;
 }
 
@@ -42,6 +43,7 @@ void TextBubbles::update() {
     const unsigned long now = millis();
     const unsigned long elapsed = now - showStartMs_;
     if (elapsed >= showDurationMs_) {
+        clearPreviousBubble();
         visible_ = false;
         return;
     }
@@ -83,15 +85,54 @@ void TextBubbles::drawBubble(float scale, uint16_t bgColor, uint16_t fgColor) {
         textSize = 3;
     }
 
-    const int bubbleW = static_cast<int>((screenW - 20) * scale);
+    int bubbleW = static_cast<int>((screenW - 20) * scale);
     const int bubbleHBase = size_ == BubbleSize::Small ? 38 : (size_ == BubbleSize::Medium ? 62 : 86);
-    const int bubbleH = static_cast<int>(bubbleHBase * scale);
+    int bubbleH = static_cast<int>(bubbleHBase * scale);
+    if (bubbleW < 70) {
+        bubbleW = 70;
+    }
+    if (bubbleH < 24) {
+        bubbleH = 24;
+    }
     const int bubbleX = (screenW - bubbleW) / 2;
     const int bubbleY = screenH - bubbleH - 10;
+    int cornerRadius = 12;
+    const int halfMinDim = (bubbleW < bubbleH ? bubbleW : bubbleH) / 2;
+    if (cornerRadius >= halfMinDim) {
+        cornerRadius = halfMinDim - 1;
+    }
+    if (cornerRadius < 2) {
+        cornerRadius = 2;
+    }
 
     display.startWrite();
-    display.fillRoundRect(bubbleX, bubbleY, bubbleW, bubbleH, 12, bgColor);
-    display.drawRoundRect(bubbleX, bubbleY, bubbleW, bubbleH, 12, fgColor);
+    if (hasPreviousBubble_) {
+        const int clearPadding = 12;
+        int clearX = previousBubbleX_ - clearPadding;
+        int clearY = previousBubbleY_ - clearPadding;
+        int clearW = previousBubbleW_ + (clearPadding * 2);
+        int clearH = previousBubbleH_ + (clearPadding * 3);
+
+        if (clearX < 0) {
+            clearW += clearX;
+            clearX = 0;
+        }
+        if (clearY < 0) {
+            clearH += clearY;
+            clearY = 0;
+        }
+        if (clearX + clearW > screenW) {
+            clearW = screenW - clearX;
+        }
+        if (clearY + clearH > screenH) {
+            clearH = screenH - clearY;
+        }
+        if (clearW > 0 && clearH > 0) {
+            display.fillRect(clearX, clearY, clearW, clearH, TFT_BLACK);
+        }
+    }
+    display.fillRoundRect(bubbleX, bubbleY, bubbleW, bubbleH, cornerRadius, bgColor);
+    display.drawRoundRect(bubbleX, bubbleY, bubbleW, bubbleH, cornerRadius, fgColor);
 
     display.fillTriangle(
         bubbleX + bubbleW / 2 - 8,
@@ -165,6 +206,49 @@ void TextBubbles::drawBubble(float scale, uint16_t bgColor, uint16_t fgColor) {
         cursorY += lineHeight;
     }
     display.endWrite();
+
+    previousBubbleX_ = bubbleX;
+    previousBubbleY_ = bubbleY;
+    previousBubbleW_ = bubbleW;
+    previousBubbleH_ = bubbleH;
+    hasPreviousBubble_ = true;
+}
+
+void TextBubbles::clearPreviousBubble() {
+    if (!hasPreviousBubble_) {
+        return;
+    }
+
+    auto& display = M5.Display;
+    const int screenW = display.width();
+    const int screenH = display.height();
+    display.startWrite();
+    const int clearPadding = 12;
+    int clearX = previousBubbleX_ - clearPadding;
+    int clearY = previousBubbleY_ - clearPadding;
+    int clearW = previousBubbleW_ + (clearPadding * 2);
+    int clearH = previousBubbleH_ + (clearPadding * 3);
+
+    if (clearX < 0) {
+        clearW += clearX;
+        clearX = 0;
+    }
+    if (clearY < 0) {
+        clearH += clearY;
+        clearY = 0;
+    }
+    if (clearX + clearW > screenW) {
+        clearW = screenW - clearX;
+    }
+    if (clearY + clearH > screenH) {
+        clearH = screenH - clearY;
+    }
+    if (clearW > 0 && clearH > 0) {
+        display.fillRect(clearX, clearY, clearW, clearH, TFT_BLACK);
+    }
+    display.endWrite();
+
+    hasPreviousBubble_ = false;
 }
 
 void TextBubbles::resolveTheme(const String& emotion, uint16_t& bgColor, uint16_t& fgColor) const {

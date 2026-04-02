@@ -19,6 +19,7 @@ public:
 
 private:
     void drawBubble(float scale, uint16_t bgColor, uint16_t fgColor);
+    void clearPreviousBubble();
     void resolveTheme(const String& emotion, uint16_t& bgColor, uint16_t& fgColor) const;
 
     String message_;
@@ -27,6 +28,11 @@ private:
     unsigned long showStartMs_ = 0;
     unsigned long showDurationMs_ = 0;
     bool visible_ = false;
+    bool hasPreviousBubble_ = false;
+    int previousBubbleX_ = 0;
+    int previousBubbleY_ = 0;
+    int previousBubbleW_ = 0;
+    int previousBubbleH_ = 0;
 };
 
 }  // namespace Flic
