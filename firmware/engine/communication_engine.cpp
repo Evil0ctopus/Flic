@@ -124,6 +124,18 @@ void CommunicationEngine::speakEmotion(const String& emotion) {
 
     if (faceEngine_ != nullptr) {
         faceEngine_->setEmotion(activeEmotion_);
+        if (activeEmotion_ == "curious") {
+            faceEngine_->setPersonalityState("curious");
+        } else if (activeEmotion_ == "happy") {
+            faceEngine_->setPersonalityState("excited");
+        } else if (activeEmotion_ == "sleepy") {
+            faceEngine_->setPersonalityState("tired");
+        } else if (activeEmotion_ == "surprised") {
+            faceEngine_->setPersonalityState("confused");
+        } else {
+            faceEngine_->setPersonalityState("neutral");
+        }
+        faceEngine_->enableMicroExpressions(true);
     }
 
     if (lightEngine_ != nullptr) {

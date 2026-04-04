@@ -1,0 +1,88 @@
+{
+  "name": "Activation Pulse Boot Animation",
+  "version": 1,
+  "seed": 424242,
+  "frame_count": 76,
+  "frame_size": [320, 240],
+  "output_prefix": "output/boot/frame",
+  "prompt_template": {
+    "1": {
+      "class_type": "CheckpointLoaderSimple",
+      "inputs": {
+        "ckpt_name": "REPLACE_ME_CHECKPOINT"
+      },
+      "_meta": {
+        "title": "CHECKPOINT"
+      }
+    },
+    "2": {
+      "class_type": "CLIPTextEncode",
+      "inputs": {
+        "text": "Activation Pulse boot animation frame, strict deterministic geometry, pure black background, centered classic power icon, circle diameter 140px, stroke 8px, vertical line 8px by 40px, top gap 12px, soft cyan #4CC3FF glow, no particles",
+        "clip": ["1", 1]
+      },
+      "_meta": {
+        "title": "STYLE_PROMPT"
+      }
+    },
+    "3": {
+      "class_type": "CLIPTextEncode",
+      "inputs": {
+        "text": "text, watermark, logo, letters, words, humans, faces, characters, creatures, particles, sparks, random shapes, busy background, clutter, asymmetry, warped circle, blur, noise, low quality",
+        "clip": ["1", 1]
+      },
+      "_meta": {
+        "title": "NEG_PROMPT"
+      }
+    },
+    "4": {
+      "class_type": "EmptyLatentImage",
+      "inputs": {
+        "width": 320,
+        "height": 240,
+        "batch_size": 1
+      },
+      "_meta": {
+        "title": "LATENT"
+      }
+    },
+    "5": {
+      "class_type": "KSampler",
+      "inputs": {
+        "seed": 424242,
+        "steps": 20,
+        "cfg": 5.5,
+        "sampler_name": "dpmpp_2m_sde",
+        "scheduler": "karras",
+        "denoise": 1.0,
+        "model": ["1", 0],
+        "positive": ["2", 0],
+        "negative": ["3", 0],
+        "latent_image": ["4", 0]
+      },
+      "_meta": {
+        "title": "SAMPLER"
+      }
+    },
+    "6": {
+      "class_type": "VAEDecode",
+      "inputs": {
+        "samples": ["5", 0],
+        "vae": ["1", 2]
+      },
+      "_meta": {
+        "title": "DECODER"
+      }
+    },
+    "7": {
+      "class_type": "SaveImage",
+      "inputs": {
+        "filename_prefix": "output/boot/frame",
+        "images": ["6", 0]
+      },
+      "_meta": {
+        "title": "IMAGE"
+      }
+    }
+  }
+}

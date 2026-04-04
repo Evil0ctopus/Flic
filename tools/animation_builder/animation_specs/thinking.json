@@ -1,5 +1,28 @@
 {
   "name": "thinking",
   "seed": 12004,
-  "open_values": [0.9, 0.86, 0.82, 0.78, 0.74, 0.7, 0.73, 0.77, 0.83, 0.88]
+  "open_values": [0.9, 0.86, 0.82, 0.78, 0.74, 0.7, 0.73, 0.77, 0.83, 0.88],
+  "style_prompt": "pondering thinking creature eye",
+  "prompt_tags": ["thoughtful", "slight gaze shift", "subtle pulse"],
+  "negative_prompt": "wide smile, open mouth, frantic motion",
+  "fallback": {
+    "eye_gap": 86,
+    "eye_y": 123,
+    "eye_width": 64,
+    "eye_height": 28,
+    "iris_scale": 0.98,
+    "pupil_scale": 0.88,
+    "glow_bias": 0.98,
+    "motion": "lean_right",
+    "brow": "raise_right",
+    "mouth": "flat",
+    "palette": {
+      "accent": "#64D8FF",
+      "primary": "#F4FBFF",
+      "shadow": "#102637",
+      "highlight": "#FFFFFF",
+      "secondary": "#B8F0FF",
+      "warning": "#FF7A7A"
+    }
+  }
 }

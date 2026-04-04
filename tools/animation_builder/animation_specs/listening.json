@@ -1,5 +1,28 @@
 {
   "name": "listening",
   "seed": 12003,
-  "open_values": [1.0, 1.03, 1.07, 1.1, 1.08, 1.05, 1.02, 1.0]
+  "open_values": [1.0, 1.03, 1.07, 1.1, 1.08, 1.05, 1.02, 1.0],
+  "style_prompt": "attentive listening creature eye",
+  "prompt_tags": ["attention", "raised brows", "gentle pulse"],
+  "negative_prompt": "sleepy lids, yawning mouth, bored expression",
+  "fallback": {
+    "eye_gap": 88,
+    "eye_y": 120,
+    "eye_width": 66,
+    "eye_height": 34,
+    "iris_scale": 1.02,
+    "pupil_scale": 0.92,
+    "glow_bias": 1.08,
+    "motion": "bounce",
+    "brow": "arched",
+    "mouth": "flat",
+    "palette": {
+      "accent": "#67E8FF",
+      "primary": "#F3FDFF",
+      "shadow": "#102739",
+      "highlight": "#FFFFFF",
+      "secondary": "#B2F0FF",
+      "warning": "#FF8B8B"
+    }
+  }
 }

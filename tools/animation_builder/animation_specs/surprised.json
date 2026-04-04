@@ -1,0 +1,28 @@
+{
+  "name": "surprised",
+  "seed": 12006,
+  "open_values": [1.06, 1.10, 1.12, 1.08, 1.05, 1.09, 1.11, 1.07],
+  "style_prompt": "wide-eyed surprised creature eye",
+  "prompt_tags": ["shock", "wide eyes", "sharp glow"],
+  "negative_prompt": "sleepy eyelids, flat stare, low energy",
+  "fallback": {
+    "eye_gap": 92,
+    "eye_y": 116,
+    "eye_width": 68,
+    "eye_height": 42,
+    "iris_scale": 1.12,
+    "pupil_scale": 0.72,
+    "glow_bias": 1.35,
+    "motion": "steady",
+    "brow": "surprised",
+    "mouth": "open",
+    "palette": {
+      "accent": "#85F4FF",
+      "primary": "#F7FDFF",
+      "shadow": "#112538",
+      "highlight": "#FFFFFF",
+      "secondary": "#B7F6FF",
+      "warning": "#FF9A3D"
+    }
+  }
+}

@@ -31,6 +31,7 @@
 #include "subsystems/sd_manager.h"
 #include "subsystems/usb_engine.h"
 #include "diagnostics/debug_log.h"
+#include "diagnostics/sd_diagnostics.h"
 #include "diagnostics/webui_event_hook.h"
 #include "ui/personality_ui.h"
 #include "ui/boot_animation.h"
@@ -87,6 +88,8 @@ Flic::ImuEngine imuEngine;
 Flic::EnvironmentLightEngine environmentLightEngine;
 Flic::SettingsManager settingsManager;
 RuntimeSettings runtimeSettings;
+bool gUseSdFallbackFace = false;
+unsigned long gLastFallbackFaceDrawMs = 0;
 constexpr const char* kAnimationName = "flic_first_animation.json";
 constexpr const char* kFirstAnimationFlagPath = "/Flic/memory/first_animation_created.flag";
 constexpr const char* kUsbCdcLabel = "usb_cdc";
@@ -129,6 +132,7 @@ constexpr bool kEnableUsbRuntime = true;
 constexpr bool kEnableMilestoneRuntime = true;
 constexpr bool kSafeBootMode = false;
 constexpr bool kShowWebUiTextBubbles = false;
+constexpr bool kRunBootExpressionDemo = true;
 
 unsigned long lastLoopMs = 0;
 unsigned long lastMotionNotifyMs = 0;
@@ -231,6 +235,10 @@ String composeFaceAnimationsCatalogJson() {
 
 String composeFaceValidateJson() {
     return faceEngine.validateAnimationSetJson();
+}
+
+String composeFaceTelemetryJson() {
+    return faceEngine.telemetryJson();
 }
 
 String composeFaceSnapshotPath() {
@@ -355,6 +363,18 @@ void applyRuntimeSettings() {
                                  runtimeSettings.personalityPatience);
     emotionEngine.setEmotionBias(runtimeSettings.emotionBias);
     animationEngine.setPlaybackSpeed(runtimeSettings.animationSpeed);
+    faceEngine.enableContextRules(true);
+    faceEngine.enableMicroExpressions(true);
+    if (runtimeSettings.personalityEnergy > 0.72f) {
+        faceEngine.setPersonalityState("excited");
+    } else if (runtimeSettings.personalityCuriosity > 0.72f) {
+        faceEngine.setPersonalityState("curious");
+    } else if (runtimeSettings.personalityPatience > 0.72f) {
+        faceEngine.setPersonalityState("focused");
+    } else {
+        faceEngine.setPersonalityState("neutral");
+    }
+    faceEngine.setMicroExpressionIntensity((runtimeSettings.personalityEnergy * 0.35f) + (runtimeSettings.personalityCuriosity * 0.25f) + 0.2f);
 
     if (runtimeSettings.traceEnabled) {
         Flic::Debug::setRuntimeLogLevel(5);
@@ -373,6 +393,7 @@ bool handleWebUiFaceSetAnimation(const String& requestJson, String& responseJson
 bool handleWebUiFacePlay(const String& requestJson, String& responseJson);
 bool handleWebUiFaceSetEmotion(const String& requestJson, String& responseJson);
 bool handleWebUiFaceReload(const String& requestJson, String& responseJson);
+bool handleWebUiFaceTelemetry(const String& requestJson, String& responseJson);
 
 bool handleWebUiFaceSettings(const String& requestJson, String& responseJson) {
     JsonDocument document;
@@ -444,6 +465,22 @@ bool handleWebUiFaceSettings(const String& requestJson, String& responseJson) {
         next.eyeColor = String(root["eye_color"].as<const char*>());
         next.eyeColor.trim();
         changed = true;
+    }
+
+    if (!root["emotion_animation_map"].isNull()) {
+        if (root["emotion_animation_map"].is<JsonObject>()) {
+            String mappingPayload;
+            serializeJson(root["emotion_animation_map"], mappingPayload);
+            next.emotionAnimationMapJson = mappingPayload;
+            changed = true;
+        } else if (root["emotion_animation_map"].is<const char*>()) {
+            next.emotionAnimationMapJson = String(root["emotion_animation_map"].as<const char*>());
+            next.emotionAnimationMapJson.trim();
+            changed = true;
+        } else {
+            responseJson = "{\"ok\":false,\"error\":\"emotion_animation_map_must_be_object_or_json_string\"}";
+            return false;
+        }
     }
 
     if (!root["ai_can_modify"].isNull()) {
@@ -584,6 +621,19 @@ bool handleWebUiFaceSetEmotion(const String& requestJson, String& responseJson) 
 
     emotionEngine.setEmotion(emotion);
     faceEngine.setEmotion(emotion);
+    if (emotion == "curious") {
+        faceEngine.setPersonalityState("curious");
+    } else if (emotion == "happy") {
+        faceEngine.setPersonalityState("excited");
+    } else if (emotion == "sleepy") {
+        faceEngine.setPersonalityState("tired");
+    } else if (emotion == "surprised") {
+        faceEngine.setPersonalityState("confused");
+    } else if (emotion == "focused") {
+        faceEngine.setPersonalityState("focused");
+    } else {
+        faceEngine.setPersonalityState("neutral");
+    }
     responseJson = "{\"ok\":true,\"emotion\":\"" + emotion + "\"}";
     return true;
 }
@@ -593,6 +643,125 @@ bool handleWebUiFaceReload(const String& requestJson, String& responseJson) {
     const bool ok = faceEngine.reloadActiveStyle();
     responseJson = String("{\"ok\":") + (ok ? "true" : "false") + "}";
     return ok;
+}
+
+bool handleWebUiFaceTelemetry(const String& requestJson, String& responseJson) {
+    JsonDocument document;
+    const DeserializationError error = deserializeJson(document, requestJson);
+    if (error || !document.is<JsonObject>()) {
+        responseJson = String("{\"ok\":false,\"error\":\"invalid_face_telemetry_json\",\"message\":\"") +
+                       error.c_str() + "\"}";
+        return false;
+    }
+
+    JsonObject root = document.as<JsonObject>();
+    JsonVariant thresholdsVariant = root["thresholds"];
+    if (thresholdsVariant.is<JsonObject>()) {
+        root = thresholdsVariant.as<JsonObject>();
+    }
+
+    Flic::FaceTelemetryThresholds thresholds = faceEngine.telemetryThresholds();
+    bool changed = false;
+    float value = 0.0f;
+
+    if (!root["fps_warn"].isNull()) {
+        if (!readNumericRange(root["fps_warn"], 1.0f, 120.0f, value)) {
+            responseJson = "{\"ok\":false,\"error\":\"fps_warn_must_be_number_1_120\"}";
+            return false;
+        }
+        thresholds.fpsWarn = value;
+        changed = true;
+    }
+    if (!root["fps_bad"].isNull()) {
+        if (!readNumericRange(root["fps_bad"], 1.0f, 120.0f, value)) {
+            responseJson = "{\"ok\":false,\"error\":\"fps_bad_must_be_number_1_120\"}";
+            return false;
+        }
+        thresholds.fpsBad = value;
+        changed = true;
+    }
+    if (!root["draw_warn_ms"].isNull()) {
+        if (!readNumericRange(root["draw_warn_ms"], 1.0f, 200.0f, value)) {
+            responseJson = "{\"ok\":false,\"error\":\"draw_warn_ms_must_be_number_1_200\"}";
+            return false;
+        }
+        thresholds.drawWarnMs = value;
+        changed = true;
+    }
+    if (!root["draw_bad_ms"].isNull()) {
+        if (!readNumericRange(root["draw_bad_ms"], 1.0f, 200.0f, value)) {
+            responseJson = "{\"ok\":false,\"error\":\"draw_bad_ms_must_be_number_1_200\"}";
+            return false;
+        }
+        thresholds.drawBadMs = value;
+        changed = true;
+    }
+    if (!root["blend_draw_warn_ms"].isNull()) {
+        if (!readNumericRange(root["blend_draw_warn_ms"], 1.0f, 250.0f, value)) {
+            responseJson = "{\"ok\":false,\"error\":\"blend_draw_warn_ms_must_be_number_1_250\"}";
+            return false;
+        }
+        thresholds.blendDrawWarnMs = value;
+        changed = true;
+    }
+    if (!root["blend_draw_bad_ms"].isNull()) {
+        if (!readNumericRange(root["blend_draw_bad_ms"], 1.0f, 250.0f, value)) {
+            responseJson = "{\"ok\":false,\"error\":\"blend_draw_bad_ms_must_be_number_1_250\"}";
+            return false;
+        }
+        thresholds.blendDrawBadMs = value;
+        changed = true;
+    }
+    if (!root["over_budget_warn_pct"].isNull()) {
+        if (!readNumericRange(root["over_budget_warn_pct"], 0.0f, 100.0f, value)) {
+            responseJson = "{\"ok\":false,\"error\":\"over_budget_warn_pct_must_be_number_0_100\"}";
+            return false;
+        }
+        thresholds.overBudgetWarnPct = value;
+        changed = true;
+    }
+    if (!root["over_budget_bad_pct"].isNull()) {
+        if (!readNumericRange(root["over_budget_bad_pct"], 0.0f, 100.0f, value)) {
+            responseJson = "{\"ok\":false,\"error\":\"over_budget_bad_pct_must_be_number_0_100\"}";
+            return false;
+        }
+        thresholds.overBudgetBadPct = value;
+        changed = true;
+    }
+    if (!root["fallback_warn_count"].isNull()) {
+        if (!readNumericRange(root["fallback_warn_count"], 0.0f, 1000.0f, value)) {
+            responseJson = "{\"ok\":false,\"error\":\"fallback_warn_count_must_be_number_0_1000\"}";
+            return false;
+        }
+        thresholds.fallbackWarnCount = value;
+        changed = true;
+    }
+    if (!root["fallback_bad_count"].isNull()) {
+        if (!readNumericRange(root["fallback_bad_count"], 0.0f, 1000.0f, value)) {
+            responseJson = "{\"ok\":false,\"error\":\"fallback_bad_count_must_be_number_0_1000\"}";
+            return false;
+        }
+        thresholds.fallbackBadCount = value;
+        changed = true;
+    }
+
+    if (!changed) {
+        responseJson = "{\"ok\":false,\"error\":\"no_valid_telemetry_thresholds_provided\"}";
+        return false;
+    }
+
+    if (thresholds.fpsBad > thresholds.fpsWarn ||
+        thresholds.drawBadMs < thresholds.drawWarnMs ||
+        thresholds.blendDrawBadMs < thresholds.blendDrawWarnMs ||
+        thresholds.overBudgetBadPct < thresholds.overBudgetWarnPct ||
+        thresholds.fallbackBadCount < thresholds.fallbackWarnCount) {
+        responseJson = "{\"ok\":false,\"error\":\"invalid_threshold_ordering\"}";
+        return false;
+    }
+
+    faceEngine.setTelemetryThresholds(thresholds);
+    responseJson = faceEngine.telemetryThresholdsJson();
+    return true;
 }
 
 float clampNeed(float value) {
@@ -1354,6 +1523,48 @@ bool handleWebUiCommand(const String& requestJson, String& responseJson) {
     } else if (lower.indexOf("show webui info") >= 0 || lower.indexOf("webui") >= 0 || lower.indexOf("ip") >= 0) {
         reply = composeWebUiHelpMessage();
         emotion = "curious";
+    } else if (lower.indexOf("set mood ") >= 0) {
+        String mood = text.substring(lower.indexOf("set mood ") + 9);
+        mood.trim();
+        mood.toLowerCase();
+        if (faceEngine.setMood(mood)) {
+            reply = String("Mood set to ") + mood;
+            emotion = mood == "stressed" ? "confused" : (mood == "tired" ? "sleepy" : "calm");
+        } else {
+            reply = String("Unable to set mood: ") + mood;
+            emotion = "confused";
+        }
+    } else if (lower == "get mood") {
+        reply = String("Current mood: ") + faceEngine.getMood();
+        emotion = "curious";
+    } else if (lower.indexOf("mood adaptation on") >= 0) {
+        faceEngine.enableMoodAdaptation(true);
+        reply = "Mood adaptation enabled.";
+        emotion = "happy";
+    } else if (lower.indexOf("mood adaptation off") >= 0) {
+        faceEngine.enableMoodAdaptation(false);
+        reply = "Mood adaptation disabled.";
+        emotion = "calm";
+    } else if (lower.indexOf("auto emotion on") >= 0) {
+        faceEngine.enableAutoEmotion(true);
+        reply = "Auto-emotion enabled.";
+        emotion = "happy";
+    } else if (lower.indexOf("auto emotion off") >= 0) {
+        faceEngine.enableAutoEmotion(false);
+        reply = "Auto-emotion disabled.";
+        emotion = "calm";
+    } else if (lower.indexOf("save personality profile") >= 0) {
+        const bool ok = faceEngine.savePersonalityProfile();
+        reply = ok ? "Personality profile saved." : "Failed to save personality profile.";
+        emotion = ok ? "happy" : "confused";
+    } else if (lower.indexOf("load personality profile") >= 0) {
+        const bool ok = faceEngine.loadPersonalityProfile();
+        reply = ok ? "Personality profile loaded." : "Failed to load personality profile.";
+        emotion = ok ? "happy" : "confused";
+    } else if (lower.indexOf("reset personality profile") >= 0) {
+        faceEngine.resetPersonalityProfile();
+        reply = "Personality profile reset.";
+        emotion = "calm";
     } else {
         reply = text;
         emotion = communicationEngine.inferEmotionFromText(text);
@@ -1384,6 +1595,28 @@ String composeWebUiState() {
     return payload;
 }
 
+void renderBuiltInFallbackFace() {
+    auto& display = M5.Display;
+    const int w = display.width();
+    const int h = display.height();
+    const int cy = h / 2;
+    const int lx = (w / 2) - 42;
+    const int rx = (w / 2) + 42;
+
+    display.startWrite();
+    display.fillScreen(TFT_BLACK);
+    display.fillCircle(lx, cy - 10, 16, 0xB71C);
+    display.fillCircle(rx, cy - 10, 16, 0xB71C);
+    display.fillCircle(lx, cy - 10, 5, TFT_BLACK);
+    display.fillCircle(rx, cy - 10, 5, TFT_BLACK);
+    display.drawLine((w / 2) - 28, cy + 24, (w / 2) + 28, cy + 24, 0x7BEF);
+    display.setTextSize(1);
+    display.setTextColor(TFT_RED, TFT_BLACK);
+    display.setCursor((w / 2) - 26, cy + 40);
+    display.print("SD ERROR");
+    display.endWrite();
+}
+
 void initializeCoreS3() {
     auto config = M5.config();
     config.clear_display = true;
@@ -1401,14 +1634,22 @@ void initializeLightingAndBoot() {
     lightEngine.begin();
     lightEngine.emotionColor("calm");
     Flic::showBootAnimation(lightEngine);
+    M5.Display.startWrite();
+    M5.Display.fillScreen(TFT_BLACK);
+    M5.Display.endWrite();
 }
 
 void initializeStorage() {
     Flic::SdManager::configureBus();
-    if (!Flic::SdManager::mount()) {
+    Flic::SdManager::mount();
+    Flic::SdDiagnostics::logSdStatus();
+    if (!Flic::g_sdMounted) {
+        gUseSdFallbackFace = true;
+        Serial.println("Flic: NO-SD mode active - using built-in faces and boot indicator.");
         Serial.println("Flic: continuing without SD-backed animations.");
         return;
     }
+    gUseSdFallbackFace = false;
     settingsManager.begin();
 }
 
@@ -1442,7 +1683,8 @@ void initializeCoreEngines() {
     }
 
     const bool hadRealAnimations = animationEngine.begin() && animationEngine.hasRealAnimations();
-    if (!hadRealAnimations) {
+    const bool hasFaceIdle = faceEngine.isEmotionAvailable("idle");
+    if (!hadRealAnimations && !hasFaceIdle) {
         animationEngine.generateFirstAnimationIfNeeded();
     }
 
@@ -1468,6 +1710,47 @@ void initializeInteractionEngines() {
         imuEngine.begin();
     }
     environmentLightEngine.begin();
+}
+
+void runBootExpressionDemoIfEnabled() {
+    if (!kRunBootExpressionDemo) {
+        return;
+    }
+
+    const char* sequence[] = {
+        "idle_breathing",
+        "emotion_calm",
+        "emotion_curious",
+        "emotion_happy",
+        "emotion_sleepy",
+        "emotion_surprised",
+        "idle_breathing",
+    };
+
+    Serial.println("Flic: boot expression demo start");
+    for (const char* preset : sequence) {
+        if (!animationEngine.playPreset(String(preset))) {
+            Serial.printf("Flic: demo preset failed: %s\n", preset);
+            delay(250);
+            continue;
+        }
+
+        // Give the animation queue time to start playback.
+        delay(120);
+
+        // Hold until playback finishes or timeout (keeps setup moving if SD content is missing).
+        const unsigned long timeoutStart = millis();
+        while (animationEngine.isPlaying()) {
+            if ((millis() - timeoutStart) > 2400UL) {
+                break;
+            }
+            delay(20);
+        }
+
+        // Brief beat between expressions for readability.
+        delay(120);
+    }
+    Serial.println("Flic: boot expression demo end");
 }
 
 void handleAsrTranscripts() {
@@ -1545,6 +1828,8 @@ void initializeRuntimeServices() {
         webUiEngine.setFaceSetEmotionHandler(handleWebUiFaceSetEmotion);
         webUiEngine.setFaceReloadHandler(handleWebUiFaceReload);
         webUiEngine.setFaceValidateProvider(composeFaceValidateJson);
+        webUiEngine.setFaceTelemetryProvider(composeFaceTelemetryJson);
+        webUiEngine.setFaceTelemetryHandler(handleWebUiFaceTelemetry);
         webUiEngine.setFaceSnapshotPathProvider(composeFaceSnapshotPath);
         if (webUiEngine.begin(Flic::kWebUiSsid, Flic::kWebUiPassword, Flic::kWebUiHttpPort, Flic::kWebUiWsPort)) {
             Flic::WebUiEventHook::setSender(sendWebUiHookEvent);
@@ -1617,7 +1902,12 @@ void showEmergencyScreenIfEnabled() {
 
 void updateRuntimeEngines(float dtSeconds) {
     emotionEngine.updateEmotion(dtSeconds);
+    faceEngine.updateMood(dtSeconds);
+    faceEngine.updateMemory(dtSeconds);
+    faceEngine.updateAdaptiveExpressions(dtSeconds);
+    faceEngine.updateAutoEmotion(dtSeconds);
     faceEngine.update(dtSeconds);
+    faceEngine.drawFrame();
     communicationEngine.update();
     if (kEnableMilestoneRuntime) {
         milestoneEngine.update();
@@ -1924,17 +2214,26 @@ void setup() {
     initializeCoreS3();
     bootStartMs = millis();
 
-    initializeLightingAndBoot();
     initializeStorage();
+    initializeLightingAndBoot();
+    if (gUseSdFallbackFace) {
+        Serial.println("Flic: SD fallback face enabled.");
+        renderBuiltInFallbackFace();
+        gLastFallbackFaceDrawMs = millis();
+    }
     initializeCoreEngines();
     initializeInteractionEngines();
     loadRuntimeSettings();
     applyRuntimeSettings();
+    runBootExpressionDemoIfEnabled();
     if (!kSafeBootMode) {
         initializeWiFi();
         initializeRuntimeServices();
-        runFirstAnimationSequence();
-        delay(900);
+        const bool hasFaceIdle = faceEngine.loadAnimation("idle");
+        if (!hasFaceIdle && !gUseSdFallbackFace) {
+            runFirstAnimationSequence();
+            delay(900);
+        }
         if (kShowWebUiTextBubbles) {
             const String startupWebUi = composeWebUiHelpMessage();
             textBubbles.showMessage(startupWebUi, Flic::BubbleSize::Large, "curious");
@@ -1967,6 +2266,13 @@ void loop() {
     }
 
     updateRuntimeEngines(dtSeconds);
+    if (gUseSdFallbackFace) {
+        const unsigned long nowMs = millis();
+        if ((nowMs - gLastFallbackFaceDrawMs) >= 1500UL) {
+            renderBuiltInFallbackFace();
+            gLastFallbackFaceDrawMs = nowMs;
+        }
+    }
     asrEngine.update();
     handleTouchInput();
     if (!kDisableVoiceInputHandling && runtimeSettings.voiceInputEnabled) {

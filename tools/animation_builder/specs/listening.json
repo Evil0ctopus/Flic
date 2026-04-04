@@ -1,0 +1,106 @@
+﻿{
+    "emotion":  "listening",
+    "frame_count":  12,
+    "easing":  "ease_out_cubic",
+    "speed":  0.95,
+    "open_curve":  [
+                       1.0,
+                       1.02,
+                       1.04,
+                       1.06,
+                       1.07,
+                       1.08,
+                       1.07,
+                       1.06,
+                       1.05,
+                       1.04,
+                       1.03,
+                       1.02
+                   ],
+    "close_curve":  [
+                        0.0,
+                        0.0,
+                        0.0,
+                        0.0,
+                        0.0,
+                        0.0,
+                        0.0,
+                        0.0,
+                        0.0,
+                        0.0,
+                        0.0,
+                        0.0
+                    ],
+    "pupil_curve":  [
+                        0.54,
+                        0.535,
+                        0.53,
+                        0.525,
+                        0.52,
+                        0.515,
+                        0.52,
+                        0.525,
+                        0.53,
+                        0.535,
+                        0.54,
+                        0.545
+                    ],
+    "glow_curve":  [
+                       0.4,
+                       0.41,
+                       0.42,
+                       0.43,
+                       0.44,
+                       0.45,
+                       0.44,
+                       0.43,
+                       0.42,
+                       0.41,
+                       0.4,
+                       0.39
+                   ],
+    "micro_movement":  {
+                           "x_drift_px":  1.9,
+                           "y_drift_px":  0.8,
+                           "jitter_px":  0.18,
+                           "frequency_hz":  0.5,
+                           "phase_offset":  0.2
+                       },
+    "eyelid_behavior":  {
+                            "upper_lid_bias":  0.42,
+                            "lower_lid_bias":  0.58,
+                            "arc_lift":  0.08,
+                            "squeeze":  0.03,
+                            "long_blink_probability":  0.01
+                        },
+    "pupil_dilation_rules":  {
+                                 "base":  0.53,
+                                 "min":  0.49,
+                                 "max":  0.6,
+                                 "light_response":  -0.2,
+                                 "attention_response":  0.2,
+                                 "emotional_gain":  0.22
+                             },
+    "emotion_timing":  {
+                           "hold_open_ms":  300,
+                           "hold_close_ms":  0,
+                           "transition_ms":  120,
+                           "blink_interval_ms":  2500,
+                           "recovery_ms":  180
+                       },
+    "compositor":  {
+                       "y_offset":  -1,
+                       "y_offset_clamp":  [
+                                              -14,
+                                              14
+                                          ],
+                       "glow_blend":  0.28,
+                       "spacing_delta":  2,
+                       "spacing_rules":  {
+
+                                         },
+                       "eye_width":  64,
+                       "eye_height":  32
+                   }
+}
+

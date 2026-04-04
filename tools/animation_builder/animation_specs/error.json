@@ -1,0 +1,28 @@
+{
+  "name": "error",
+  "seed": 12009,
+  "open_values": [0.82, 0.77, 0.72, 0.69, 0.74, 0.79, 0.76, 0.71],
+  "style_prompt": "alert error creature eye",
+  "prompt_tags": ["alarm", "red accent", "glitch warning"],
+  "negative_prompt": "calm expression, warm palette, soft mood",
+  "fallback": {
+    "eye_gap": 82,
+    "eye_y": 122,
+    "eye_width": 62,
+    "eye_height": 30,
+    "iris_scale": 0.96,
+    "pupil_scale": 0.80,
+    "glow_bias": 1.32,
+    "motion": "shiver",
+    "brow": "angry",
+    "mouth": "open",
+    "palette": {
+      "accent": "#FF5A5A",
+      "primary": "#FFF7F7",
+      "shadow": "#3A1111",
+      "highlight": "#FFFFFF",
+      "secondary": "#FF8E8E",
+      "warning": "#FF2D2D"
+    }
+  }
+}

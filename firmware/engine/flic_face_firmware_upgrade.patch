@@ -1,0 +1,791 @@
+diff --git a/firmware/engine/face_engine.cpp b/firmware/engine/face_engine.cpp
+index 045f532..c0068e4 100644
+--- a/firmware/engine/face_engine.cpp
++++ b/firmware/engine/face_engine.cpp
+@@ -9,16 +9,10 @@
+ 
+ #include <algorithm>
+ #include <cmath>
++#include <type_traits>
+ 
+ const Flic::FaceEngine::AnimationDefinition kPrimeDefinitions[] = {
+-    {"blink", 6, 80, Flic::FaceEngine::TimingCurve::EaseInOut, 0.80f, 0.0f, false, false, false},
+     {"idle", 12, 150, Flic::FaceEngine::TimingCurve::Linear, 1.00f, 10.0f, false, false, false},
+-    {"listening", 8, 120, Flic::FaceEngine::TimingCurve::EaseOut, 1.25f, 0.0f, false, false, false},
+-    {"thinking", 10, 140, Flic::FaceEngine::TimingCurve::EaseIn, 1.05f, 0.0f, true, false, false},
+-    {"speaking", 12, 120, Flic::FaceEngine::TimingCurve::Linear, 1.00f, 0.0f, false, true, false},
+-    {"happy", 10, 110, Flic::FaceEngine::TimingCurve::EaseOut, 1.35f, 0.0f, false, false, false},
+-    {"sad", 10, 160, Flic::FaceEngine::TimingCurve::EaseIn, 0.70f, 0.0f, false, false, false},
+-    {"surprise", 8, 90, Flic::FaceEngine::TimingCurve::EaseOut, 1.45f, 0.0f, false, false, true},
+ };
+ 
+ namespace Flic {
+@@ -29,15 +23,18 @@ constexpr const char* kFaceMetadataSecondaryPath = "/src/face/animation_metadata
+ constexpr const char* kDefaultStyle = "default";
+ constexpr const char* kDefaultAnimation = "idle";
+ constexpr const char* kRequiredAnimations[] = {
+-    "blink", "idle", "listening", "thinking", "speaking", "happy", "sad", "surprise"
++    "idle"
+ };
+ constexpr uint32_t kRenderTaskStackWords = 8192;
+ constexpr uint32_t kRenderTaskPriority = 2;
+ constexpr uint32_t kPlaybackQueueLength = 6;
+ constexpr uint32_t kIdlePulsePeriodMs = 9000;
+ constexpr uint32_t kBlinkPeriodMs = 3600;
++constexpr bool kEnableGlowOverlay = false;
+ constexpr size_t kInlineFrameMaxBytes = 48 * 1024;
+ constexpr size_t kStreamFrameMaxBytes = 2 * 1024 * 1024;
++constexpr uint16_t kExpectedFrameWidth = 240;
++constexpr uint16_t kExpectedFrameHeight = 240;
+ 
+ struct PlaybackRequest {
+     char style[32];
+@@ -51,10 +48,122 @@ TaskHandle_t gPlaybackTask = nullptr;
+ volatile bool gFaceBusy = false;
+ volatile bool gInterruptRequested = false;
+ 
++template <typename T, typename = void>
++struct HasIsBusy : std::false_type {};
++
++template <typename T>
++struct HasIsBusy<T, std::void_t<decltype(std::declval<T&>().isBusy())>> : std::true_type {};
++
++template <typename T, typename = void>
++struct HasDisplayBusy : std::false_type {};
++
++template <typename T>
++struct HasDisplayBusy<T, std::void_t<decltype(std::declval<T&>().displayBusy())>> : std::true_type {};
++
++template <typename T>
++typename std::enable_if<HasIsBusy<T>::value, void>::type waitForDisplayReadyImpl(T& display) {
++    while (display.isBusy()) {
++        delayMicroseconds(50);
++    }
++}
++
++template <typename T>
++typename std::enable_if<!HasIsBusy<T>::value && HasDisplayBusy<T>::value, void>::type waitForDisplayReadyImpl(T& display) {
++    while (display.displayBusy()) {
++        delayMicroseconds(50);
++    }
++}
++
++template <typename T>
++typename std::enable_if<!HasIsBusy<T>::value && !HasDisplayBusy<T>::value, void>::type waitForDisplayReadyImpl(T&) {
++    delayMicroseconds(500);
++}
++
++template <typename T, typename = void>
++struct HasPushPixels : std::false_type {};
++
++template <typename T>
++struct HasPushPixels<T, std::void_t<decltype(std::declval<T&>().pushPixels((const uint16_t*)nullptr, size_t(0)))>>
++    : std::true_type {};
++
++template <typename T, typename = void>
++struct HasPushImage : std::false_type {};
++
++template <typename T>
++struct HasPushImage<T, std::void_t<decltype(std::declval<T&>().pushImage(int32_t(0), int32_t(0), int32_t(0), int32_t(0),
++                                                                           (const uint16_t*)nullptr))>>
++    : std::true_type {};
++
++template <typename T>
++typename std::enable_if<HasPushPixels<T>::value, void>::type pushSolidWindow(T& display,
++                                                                              int x,
++                                                                              int y,
++                                                                              int width,
++                                                                              int height,
++                                                                              uint16_t color) {
++    if (width <= 0 || height <= 0) {
++        return;
++    }
++
++    static std::vector<uint16_t> lineBuffer;
++    if (lineBuffer.size() < static_cast<size_t>(width)) {
++        lineBuffer.resize(width);
++    }
++    std::fill(lineBuffer.begin(), lineBuffer.begin() + width, color);
++
++    display.setAddrWindow(x, y, width, height);
++    for (int row = 0; row < height; ++row) {
++        display.pushPixels(lineBuffer.data(), static_cast<size_t>(width));
++    }
++}
++
++template <typename T>
++typename std::enable_if<!HasPushPixels<T>::value && HasPushImage<T>::value, void>::type pushSolidWindow(T& display,
++                                                                                                          int x,
++                                                                                                          int y,
++                                                                                                          int width,
++                                                                                                          int height,
++                                                                                                          uint16_t color) {
++    if (width <= 0 || height <= 0) {
++        return;
++    }
++
++    static std::vector<uint16_t> blockBuffer;
++    const size_t pixelCount = static_cast<size_t>(width) * static_cast<size_t>(height);
++    if (blockBuffer.size() < pixelCount) {
++        blockBuffer.resize(pixelCount);
++    }
++    std::fill(blockBuffer.begin(), blockBuffer.begin() + pixelCount, color);
++    display.pushImage(x, y, width, height, blockBuffer.data());
++}
++
++template <typename T>
++typename std::enable_if<!HasPushPixels<T>::value && !HasPushImage<T>::value, void>::type pushSolidWindow(T&,
++                                                                                                           int,
++                                                                                                           int,
++                                                                                                           int,
++                                                                                                           int,
++                                                                                                           uint16_t) {
++}
++
++template <typename T>
++void waitForDisplayReady(T& display) {
++    waitForDisplayReadyImpl(display);
++}
++
+ bool endsWithPng(const String& value) {
+     return value.endsWith(".png");
+ }
+ 
++uint32_t hashString(const String& value) {
++    uint32_t hash = 2166136261u;
++    for (size_t i = 0; i < static_cast<size_t>(value.length()); ++i) {
++        hash ^= static_cast<uint8_t>(value.charAt(i));
++        hash *= 16777619u;
++    }
++    return hash;
++}
++
+ bool isFrameNameValid(const String& value) {
+     const int slash = value.lastIndexOf('/');
+     String name = slash >= 0 ? value.substring(slash + 1) : value;
+@@ -165,14 +274,7 @@ String jsonArrayFromStrings(const std::vector<String>& values) {
+ 
+ String defaultMetadataJson() {
+     return String("{") +
+-           "\"blink\":{\"frames\":6,\"frame_time_ms\":80,\"easing\":\"EaseInOut\",\"glow_dim_percent\":20}," +
+-           "\"idle\":{\"frames\":12,\"frame_time_ms\":150,\"easing\":\"Linear\",\"glow_variation_percent\":10}," +
+-           "\"listening\":{\"frames\":8,\"frame_time_ms\":120,\"easing\":\"EaseOut\",\"glow_brighten_percent\":25}," +
+-           "\"thinking\":{\"frames\":10,\"frame_time_ms\":140,\"easing\":\"EaseIn\",\"glow_pulse\":\"slow\"}," +
+-           "\"speaking\":{\"frames\":12,\"frame_time_ms\":\"dynamic\",\"easing\":\"Linear\",\"glow_pulse\":\"amplitude\"}," +
+-           "\"happy\":{\"frames\":10,\"frame_time_ms\":110,\"easing\":\"EaseOut\",\"glow_brighten_percent\":35}," +
+-           "\"sad\":{\"frames\":10,\"frame_time_ms\":160,\"easing\":\"EaseIn\",\"glow_dim_percent\":30}," +
+-           "\"surprise\":{\"frames\":8,\"frame_time_ms\":90,\"easing\":\"EaseOut\",\"glow_spike\":true}" +
++           "\"idle\":{\"frames\":12,\"frame_time_ms\":150,\"easing\":\"Linear\",\"glow_variation_percent\":10}" +
+            "}";
+ }
+ 
+@@ -208,6 +310,10 @@ void FaceEngine::playbackTask(void* parameter) {
+         }
+ 
+         const size_t frameCount = sequence.frames.size();
++        if (owner != nullptr && frameCount > 0) {
++            owner->runTransitionTo(sequence.frames.front());
++        }
++        int lastFrame = -1;
+         for (size_t frameIndex = 0; frameIndex < frameCount; ++frameIndex) {
+             if (gInterruptRequested && request.priority == 0) {
+                 break;
+@@ -223,14 +329,22 @@ void FaceEngine::playbackTask(void* parameter) {
+                                                ? 0
+                                                : static_cast<size_t>(eased * static_cast<float>(frameCount - 1));
+                 const size_t safeIndex = mappedIndex >= frameCount ? (frameCount - 1) : mappedIndex;
++                if (static_cast<int>(safeIndex) == lastFrame) {
++                    continue;
++                }
++                lastFrame = static_cast<int>(safeIndex);
+                 const int eyeBounce = sequence.dynamicSpeaking
+                                           ? static_cast<int>(std::round(std::sin(owner->timeAccumulator_ * 12.0f) * amplitude * 2.0f))
+                                           : 0;
+                 owner->renderFrame(sequence.frames[safeIndex], eyeBounce);
+-                owner->renderGlowOverlay(sequence, normalized, amplitude);
++                if (kEnableGlowOverlay) {
++                    owner->renderGlowOverlay(sequence, normalized, amplitude);
++                }
+             }
+ 
+             const unsigned long frameStart = millis();
++            const uint16_t renderClampMs = owner != nullptr ? owner->renderFrameDelayMs_ : 16;
++            vTaskDelay(pdMS_TO_TICKS(renderClampMs));
+             for (;;) {
+                 if ((millis() - frameStart) >= delayMs) {
+                     break;
+@@ -270,6 +384,8 @@ bool FaceEngine::begin() {
+     ensureFaceDirectories();
+     loadAnimationMetadata();
+     scanIndex();
++    transitionEngine_.setFrameRate(60.0f);
++    renderFrameDelayMs_ = transitionEngine_.frameDelayMs();
+ 
+     if (gPlaybackQueue == nullptr) {
+         gPlaybackQueue = xQueueCreate(kPlaybackQueueLength, sizeof(PlaybackRequest));
+@@ -307,11 +423,6 @@ void FaceEngine::update(float deltaSeconds) {
+ 
+     const unsigned long now = millis();
+     if (shouldIdleTrigger()) {
+-        if ((now - lastBlinkMs_) >= static_cast<unsigned long>(kBlinkPeriodMs / (blinkSpeed_ < 0.5f ? 0.5f : blinkSpeed_))) {
+-            playAnimation("blink");
+-            lastBlinkMs_ = now;
+-            return;
+-        }
+         if ((now - lastIdlePulseMs_) >= kIdlePulsePeriodMs) {
+             idlePulse();
+             lastIdlePulseMs_ = now;
+@@ -352,7 +463,6 @@ bool FaceEngine::setStyle(const String& styleName) {
+             return true;
+         }
+     }
+-    Serial.printf("[Face] style '%s' missing, using default\n", normalized.c_str());
+     activeStyle_ = kDefaultStyle;
+     dirty_ = true;
+     return false;
+@@ -364,16 +474,18 @@ bool FaceEngine::play(const String& animationName) {
+         return false;
+     }
+ 
+-    if (normalized == "blink") {
+-        lastBlinkMs_ = millis();
++    String target = normalized;
++    if (!isEmotionAvailable(target)) {
++        target = kDefaultAnimation;
+     }
+ 
+-    if (!triggerPlayback(activeStyle_, normalized)) {
++    if (!triggerPlayback(activeStyle_, target)) {
+         return false;
+     }
+ 
+-    activeAnimation_ = normalized;
+-    transitionToIdlePending_ = (normalized == "speaking");
++    activeAnimation_ = target;
++    activeEmotion_ = target;
++    transitionToIdlePending_ = false;
+     playing_ = true;
+     return true;
+ }
+@@ -445,50 +557,67 @@ bool FaceEngine::setGlowProfile(const String& animationName, const FaceGlowProfi
+ }
+ 
+ bool FaceEngine::setEmotion(const String& emotionName) {
+-    activeEmotion_ = normalizeName(emotionName);
+-    String mapped = activeEmotion_;
+-    if (mapped == "warning" || mapped == "surprise") {
+-        mapped = "surprise";
+-    } else if (mapped == "surprised") {
+-        mapped = "surprise";
+-    } else if (mapped == "thinking") {
+-        mapped = "thinking";
+-    } else if (mapped == "excited") {
+-        mapped = "idle";
+-        setFrameRate("idle", 10.0f);
+-        setSpeakingAmplitude(0.75f);
+-        FaceGlowProfile profile;
+-        profile.glowMultiplier = 1.2f;
+-        profile.amplitudePulse = true;
+-        setGlowProfile("idle", profile);
+-    } else if (mapped == "tired") {
+-        mapped = "idle";
+-        setFrameRate("idle", 5.0f);
+-        FaceGlowProfile profile;
+-        profile.glowMultiplier = 0.80f;
+-        profile.slowPulse = true;
+-        setGlowProfile("idle", profile);
+-    } else if (mapped == "neutral") {
+-        mapped = "idle";
+-    } else if (mapped == "calm") {
+-        mapped = "idle";
+-    } else if (mapped == "curious") {
+-        mapped = "thinking";
+-    } else if (mapped == "speaking") {
+-        mapped = "speaking";
+-    } else if (mapped == "listening") {
+-        mapped = "listening";
+-    } else if (mapped == "sad") {
+-        mapped = "sad";
+-    } else if (mapped == "happy") {
+-        mapped = "happy";
+-    } else if (mapped == "sleepy") {
+-        mapped = "idle";
+-    } else if (mapped.length() == 0) {
+-        mapped = "idle";
+-    }
+-
+-    return play(mapped);
++    const String normalized = normalizeName(emotionName);
++    if (normalized.length() == 0) {
++        return false;
++    }
++
++    String target = normalized;
++    if (!isEmotionAvailable(target)) {
++        target = kDefaultAnimation;
++    }
++
++    activeEmotion_ = target;
++    activeAnimation_ = target;
++    transitionToIdlePending_ = false;
++    if (!triggerPlayback(activeStyle_, target)) {
++        return false;
++    }
++    playing_ = true;
++    return true;
++}
++
++String FaceEngine::getCurrentEmotion() const {
++    return activeEmotion_;
++}
++
++bool FaceEngine::setTransitionMode(const String& mode) {
++    if (!transitionEngine_.setModeFromString(mode)) {
++        return false;
++    }
++    renderFrameDelayMs_ = transitionEngine_.frameDelayMs();
++    return true;
++}
++
++bool FaceEngine::setFrameRate(float fps) {
++    transitionEngine_.setFrameRate(fps);
++    renderFrameDelayMs_ = transitionEngine_.frameDelayMs();
++    return true;
++}
++
++bool FaceEngine::reloadEmotionAssets() {
++    return reloadActiveStyle();
++}
++
++bool FaceEngine::isEmotionAvailable(const String& emotionName) const {
++    const String normalizedEmotion = normalizeName(emotionName);
++    if (normalizedEmotion.length() == 0) {
++        return false;
++    }
++
++    for (const FrameSequence& sequence : index_) {
++        if (sequence.style == activeStyle_ && sequence.animation == normalizedEmotion && !sequence.frames.empty()) {
++            return true;
++        }
++    }
++
++    for (const FrameSequence& sequence : index_) {
++        if (sequence.style == kDefaultStyle && sequence.animation == normalizedEmotion && !sequence.frames.empty()) {
++            return true;
++        }
++    }
++
++    return false;
+ }
+ 
+ bool FaceEngine::idlePulse() {
+@@ -695,6 +824,10 @@ String FaceEngine::currentFramePath() const {
+     return lastRenderedFramePath_;
+ }
+ 
++bool FaceEngine::isActive() const {
++    return playing_ || gFaceBusy;
++}
++
+ bool FaceEngine::reloadActiveStyle() {
+     return loadAnimationSet(activeStyle_);
+ }
+@@ -874,10 +1007,16 @@ bool FaceEngine::scanIndex() {
+             while (frameEntry) {
+                 if (!frameEntry.isDirectory()) {
+                     const String framePath = framePathFromEntry(styleName, sequence.animation, frameEntry.name());
+-                    if (endsWithPng(framePath)) {
+-                        FrameAsset asset = loadFrameAsset(framePath);
+-                        if (asset.path.length() > 0) {
+-                            sequence.frames.push_back(asset);
++                    if (endsWithPng(framePath) && isFrameNameValid(framePath)) {
++                        uint32_t width = 0;
++                        uint32_t height = 0;
++                        uint8_t colorType = 0;
++                        if (readPngHeader(framePath, width, height, colorType) &&
++                            width == kExpectedFrameWidth && height == kExpectedFrameHeight) {
++                            FrameAsset asset = loadFrameAsset(framePath);
++                            if (asset.path.length() > 0) {
++                                sequence.frames.push_back(asset);
++                            }
+                         }
+                     }
+                 }
+@@ -889,14 +1028,6 @@ bool FaceEngine::scanIndex() {
+             });
+ 
+             if (!sequence.frames.empty()) {
+-                if (definition != nullptr && definition->expectedFrames > 0 &&
+-                    sequence.frames.size() != definition->expectedFrames) {
+-                    Serial.printf("[Face] warning: %s/%s expected %u frames, found %u\n",
+-                                  styleName.c_str(),
+-                                  sequence.animation.c_str(),
+-                                  static_cast<unsigned>(definition->expectedFrames),
+-                                  static_cast<unsigned>(sequence.frames.size()));
+-                }
+                 index_.push_back(sequence);
+             }
+ 
+@@ -909,20 +1040,6 @@ bool FaceEngine::scanIndex() {
+         styles_.push_back(kDefaultStyle);
+     }
+ 
+-    for (const String& animationName : requiredAnimations_) {
+-        bool found = false;
+-        for (const FrameSequence& sequence : index_) {
+-            if (sequence.style == kDefaultStyle && sequence.animation == animationName) {
+-                found = true;
+-                break;
+-            }
+-        }
+-        if (!found) {
+-            Serial.printf("[Face] warning: missing required animation folder %s/%s/%s\n", kFaceRoot, kDefaultStyle,
+-                          animationName.c_str());
+-        }
+-    }
+-
+     return true;
+ }
+ 
+@@ -957,14 +1074,10 @@ bool FaceEngine::loadAnimationMetadata() {
+     const bool loadedPrimary = SdManager::readJSON(kFaceMetadataPrimaryPath, document);
+     const bool loadedSecondary = !loadedPrimary && SdManager::readJSON(kFaceMetadataSecondaryPath, document);
+     if (!loadedPrimary && !loadedSecondary) {
+-        Serial.printf("[Face] metadata not found at %s or %s; using defaults\n",
+-                      kFaceMetadataPrimaryPath,
+-                      kFaceMetadataSecondaryPath);
+         return false;
+     }
+ 
+     if (!document.is<JsonObject>()) {
+-        Serial.println("[Face] invalid metadata JSON root; expected object");
+         return false;
+     }
+ 
+@@ -1037,7 +1150,6 @@ bool FaceEngine::loadAnimationMetadata() {
+         }
+     }
+ 
+-    Serial.println("[Face] loaded animation metadata blueprint");
+     return true;
+ }
+ 
+@@ -1079,8 +1191,6 @@ FaceEngine::FrameSequence FaceEngine::resolveSequence(const String& styleName, c
+     if (normalizedStyle != kDefaultStyle) {
+         for (const FrameSequence& sequence : index_) {
+             if (sequence.style == kDefaultStyle && sequence.animation == normalizedAnimation) {
+-                Serial.printf("[Face] warning: style '%s' missing animation '%s'; using default style\n",
+-                              normalizedStyle.c_str(), normalizedAnimation.c_str());
+                 return sequence;
+             }
+         }
+@@ -1099,7 +1209,6 @@ FaceEngine::FrameSequence FaceEngine::resolveFallbackSequence(const String& anim
+ 
+     for (const FrameSequence& sequence : index_) {
+         if (sequence.style == kDefaultStyle && sequence.animation == kDefaultAnimation) {
+-            Serial.printf("[Face] warning: '%s' missing; falling back to idle\n", normalizedAnimation.c_str());
+             return sequence;
+         }
+     }
+@@ -1274,13 +1383,26 @@ void FaceEngine::renderFrame(const FrameAsset& frame, int yOffsetPx) const {
+         return;
+     }
+ 
++    const int frameNumber = frameNumberFromName(frame.path);
++    if (frame.path == lastRenderedFramePath_) {
++        return;
++    }
++
+     const_cast<FaceEngine*>(this)->lastRenderedFramePath_ = frame.path;
++    const_cast<FaceEngine*>(this)->lastRenderedFrameNumber_ = frameNumber;
+ 
+     auto& display = M5.Display;
++    constexpr int kFrameWidthPx = 240;
++    constexpr int kFrameHeightPx = 240;
++    const int xOffsetPx = display.width() > kFrameWidthPx ? (display.width() - kFrameWidthPx) / 2 : 0;
++    const int yBasePx = display.height() > kFrameHeightPx ? (display.height() - kFrameHeightPx) / 2 : 0;
++    const int yOffsetClamped = yOffsetPx < -8 ? -8 : (yOffsetPx > 8 ? 8 : yOffsetPx);
++    const int drawY = yBasePx + yOffsetClamped;
++    waitForDisplayReady(display);
+     display.startWrite();
+ 
+     if (frame.cached && !frame.bytes.empty()) {
+-        display.drawPng(frame.bytes.data(), frame.bytes.size(), 0, yOffsetPx);
++        display.drawPng(frame.bytes.data(), frame.bytes.size(), xOffsetPx, drawY);
+         display.endWrite();
+         return;
+     }
+@@ -1298,13 +1420,63 @@ void FaceEngine::renderFrame(const FrameAsset& frame, int yOffsetPx) const {
+         return;
+     }
+ 
+-    std::vector<uint8_t> buffer(size);
+-    const size_t bytesRead = file.read(buffer.data(), size);
++    if (streamBuffer_.size() < size) {
++        const_cast<FaceEngine*>(this)->streamBuffer_.resize(size);
++    }
++    const size_t bytesRead = file.read(const_cast<FaceEngine*>(this)->streamBuffer_.data(), size);
+     file.close();
+     if (bytesRead == size) {
+-        display.drawPng(buffer.data(), buffer.size(), 0, yOffsetPx);
++        display.drawPng(const_cast<FaceEngine*>(this)->streamBuffer_.data(), size, xOffsetPx, drawY);
++    }
++
++    display.endWrite();
++}
++
++void FaceEngine::runTransitionTo(const FrameAsset& nextFrame) const {
++    if (nextFrame.path.length() == 0 || lastRenderedFramePath_.length() == 0 ||
++        transitionEngine_.mode() == FaceTransitionEngine::Mode::DirectCut) {
++        return;
++    }
++
++    FrameAsset previous;
++    previous.path = lastRenderedFramePath_;
++
++    if (transitionEngine_.mode() == FaceTransitionEngine::Mode::FadeToBlack) {
++        renderFrame(previous, 0);
++        vTaskDelay(pdMS_TO_TICKS(renderFrameDelayMs_));
++        renderFaceWindowBlack(140);
++        vTaskDelay(pdMS_TO_TICKS(renderFrameDelayMs_));
++        renderFaceWindowBlack(255);
++        vTaskDelay(pdMS_TO_TICKS(renderFrameDelayMs_));
++        return;
+     }
+ 
++    const uint32_t seed = hashString(previous.path + "|" + nextFrame.path);
++    for (uint8_t step = 0; step < 4; ++step) {
++        bool showNext = (step % 2) == 1;
++        if (transitionEngine_.mode() == FaceTransitionEngine::Mode::Dissolve) {
++            const uint32_t mixed = seed ^ static_cast<uint32_t>(step * 1103515245u);
++            showNext = (mixed & 0x1u) == 1u;
++        }
++
++        if (showNext) {
++            renderFrame(nextFrame, 0);
++        } else {
++            renderFrame(previous, 0);
++        }
++        vTaskDelay(pdMS_TO_TICKS(renderFrameDelayMs_));
++    }
++}
++
++void FaceEngine::renderFaceWindowBlack(uint8_t level) const {
++    auto& display = M5.Display;
++    const int xOffsetPx = display.width() > kExpectedFrameWidth ? (display.width() - kExpectedFrameWidth) / 2 : 0;
++    const int yOffsetPx = display.height() > kExpectedFrameHeight ? (display.height() - kExpectedFrameHeight) / 2 : 0;
++    waitForDisplayReady(display);
++    display.startWrite();
++    const uint8_t channel = static_cast<uint8_t>(255 - level);
++    const uint16_t color = display.color565(channel, channel, channel);
++    pushSolidWindow(display, xOffsetPx, yOffsetPx, kExpectedFrameWidth, kExpectedFrameHeight, color);
+     display.endWrite();
+ }
+ 
+@@ -1358,13 +1530,15 @@ void FaceEngine::renderGlowOverlay(const FrameSequence& sequence, float normaliz
+ }
+ 
+ void FaceEngine::finishPlayback() {
+-    playing_ = false;
+-    if (shouldReturnToIdleAfterPlayback()) {
+-        transitionToIdlePending_ = false;
+-        triggerPlayback(activeStyle_, "idle");
+-        activeAnimation_ = "idle";
++    const String loopEmotion = isEmotionAvailable(activeEmotion_) ? activeEmotion_ : String(kDefaultAnimation);
++    if (triggerPlayback(activeStyle_, loopEmotion)) {
++        activeAnimation_ = loopEmotion;
++        activeEmotion_ = loopEmotion;
+         playing_ = true;
++        return;
+     }
++
++    playing_ = false;
+ }
+ 
+ bool FaceEngine::shouldIdleTrigger() const {
+diff --git a/firmware/engine/face_engine.h b/firmware/engine/face_engine.h
+index de1cede..27ac962 100644
+--- a/firmware/engine/face_engine.h
++++ b/firmware/engine/face_engine.h
+@@ -4,6 +4,8 @@
+ 
+ #include <vector>
+ 
++#include "face_transition_engine.h"
++
+ namespace Flic {
+ 
+ struct FaceSettings;
+@@ -59,6 +61,11 @@ public:
+     bool setEasing(const String& animationName, const String& easingType);
+     bool setGlowProfile(const String& animationName, const FaceGlowProfile& params);
+     bool setEmotion(const String& emotionName);
++    String getCurrentEmotion() const;
++    bool setTransitionMode(const String& mode);
++    bool setFrameRate(float fps);
++    bool reloadEmotionAssets();
++    bool isEmotionAvailable(const String& emotionName) const;
+     bool idlePulse();
+     bool setFrameRate(const String& animationName, float fps);
+     void setGlowModulation(const FaceGlowModulation& params);
+@@ -81,6 +88,7 @@ public:
+     String currentFramePath() const;
+     String validateAnimationSetJson() const;
+     bool reloadActiveStyle();
++    bool isActive() const;
+ 
+     bool canWriteCustomAnimation() const;
+     bool canModifyExistingAnimation() const;
+@@ -127,6 +135,8 @@ private:
+     String styleDisplayName(const String& styleName) const;
+     String timingCurveName(TimingCurve curve) const;
+     void renderFrame(const FrameAsset& frame, int yOffsetPx = 0) const;
++    void runTransitionTo(const FrameAsset& nextFrame) const;
++    void renderFaceWindowBlack(uint8_t level) const;
+     void renderGlowOverlay(const FrameSequence& sequence, float normalizedFrame, float amplitude) const;
+     void finishPlayback();
+     bool shouldIdleTrigger() const;
+@@ -157,6 +167,10 @@ private:
+     std::vector<FrameSequence> index_;
+     std::vector<AnimationDefinition> metadataDefinitions_;
+     String lastRenderedFramePath_;
++    int lastRenderedFrameNumber_ = -1;
++    mutable std::vector<uint8_t> streamBuffer_;
++    FaceTransitionEngine transitionEngine_;
++    uint16_t renderFrameDelayMs_ = 16;
+ };
+ 
+ }  // namespace Flic
+diff --git a/firmware/ui/personality_ui.cpp b/firmware/ui/personality_ui.cpp
+index e02e3f9..354f265 100644
+--- a/firmware/ui/personality_ui.cpp
++++ b/firmware/ui/personality_ui.cpp
+@@ -294,6 +294,9 @@ void PersonalityUI::showStatusLine(const String& title, const String& detail) {
+     if (kDisableDisplayRendering) {
+         return;
+     }
++    if (faceEngine_ != nullptr && faceEngine_->isActive()) {
++        return;
++    }
+ 
+     auto& display = M5.Display;
+     display.startWrite();
+diff --git a/firmware/engine/face_transition_engine.h b/firmware/engine/face_transition_engine.h
+new file mode 100644
+index 0000000..22f9545
+--- /dev/null
++++ b/firmware/engine/face_transition_engine.h
+@@ -0,0 +1,30 @@
++#pragma once
++
++#include <Arduino.h>
++
++namespace Flic {
++
++class FaceTransitionEngine {
++public:
++    enum class Mode : uint8_t {
++        DirectCut = 0,
++        Crossfade = 1,
++        Dissolve = 2,
++        FadeToBlack = 3,
++    };
++
++    void setMode(Mode mode);
++    Mode mode() const;
++    bool setModeFromString(const String& modeName);
++    String modeName() const;
++
++    void setFrameRate(float fps);
++    float frameRate() const;
++    uint16_t frameDelayMs() const;
++
++private:
++    Mode mode_ = Mode::DirectCut;
++    float frameRate_ = 60.0f;
++};
++
++}  // namespace Flic
+diff --git a/firmware/engine/face_transition_engine.cpp b/firmware/engine/face_transition_engine.cpp
+new file mode 100644
+index 0000000..07bc971
+--- /dev/null
++++ b/firmware/engine/face_transition_engine.cpp
+@@ -0,0 +1,77 @@
++#include "face_transition_engine.h"
++
++namespace Flic {
++
++namespace {
++constexpr float kMinFps = 15.0f;
++constexpr float kMaxFps = 60.0f;
++}
++
++void FaceTransitionEngine::setMode(Mode mode) {
++    mode_ = mode;
++}
++
++FaceTransitionEngine::Mode FaceTransitionEngine::mode() const {
++    return mode_;
++}
++
++bool FaceTransitionEngine::setModeFromString(const String& modeName) {
++    String mode = modeName;
++    mode.trim();
++    mode.toLowerCase();
++
++    if (mode == "crossfade") {
++        mode_ = Mode::Crossfade;
++        return true;
++    }
++    if (mode == "dissolve") {
++        mode_ = Mode::Dissolve;
++        return true;
++    }
++    if (mode == "fade_to_black" || mode == "fade-to-black") {
++        mode_ = Mode::FadeToBlack;
++        return true;
++    }
++    if (mode == "direct" || mode == "direct_cut" || mode == "cut" || mode == "default") {
++        mode_ = Mode::DirectCut;
++        return true;
++    }
++
++    return false;
++}
++
++String FaceTransitionEngine::modeName() const {
++    switch (mode_) {
++        case Mode::Crossfade:
++            return "crossfade";
++        case Mode::Dissolve:
++            return "dissolve";
++        case Mode::FadeToBlack:
++            return "fade_to_black";
++        case Mode::DirectCut:
++        default:
++            return "direct_cut";
++    }
++}
++
++void FaceTransitionEngine::setFrameRate(float fps) {
++    if (fps < kMinFps) {
++        fps = kMinFps;
++    }
++    if (fps > kMaxFps) {
++        fps = kMaxFps;
++    }
++    frameRate_ = fps;
++}
++
++float FaceTransitionEngine::frameRate() const {
++    return frameRate_;
++}
++
++uint16_t FaceTransitionEngine::frameDelayMs() const {
++    const float fps = frameRate_ <= 0.0f ? 60.0f : frameRate_;
++    const float delay = 1000.0f / fps;
++    return delay < 1.0f ? 1 : static_cast<uint16_t>(delay);
++}
++
++}  // namespace Flic

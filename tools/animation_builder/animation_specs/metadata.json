@@ -1,0 +1,16 @@
+{
+  "emotions": [
+    "idle",
+    "blink",
+    "listening",
+    "thinking",
+    "speaking",
+    "happy",
+    "sad",
+    "surprised",
+    "angry",
+    "sleepy",
+    "error",
+    "neutral"
+  ]
+}

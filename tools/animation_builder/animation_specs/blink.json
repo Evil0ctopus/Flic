@@ -1,5 +1,28 @@
 {
   "name": "blink",
   "seed": 12001,
-  "open_values": [1.0, 0.75, 0.5, 0.25, 0.0, 1.0]
+  "open_values": [1.0, 0.75, 0.5, 0.25, 0.0, 1.0],
+  "style_prompt": "fast blink creature eye",
+  "prompt_tags": ["blink", "quick closure", "micro motion"],
+  "negative_prompt": "stare, fully open, static eye",
+  "fallback": {
+    "eye_gap": 84,
+    "eye_y": 122,
+    "eye_width": 64,
+    "eye_height": 30,
+    "iris_scale": 0.96,
+    "pupil_scale": 0.82,
+    "glow_bias": 0.90,
+    "motion": "steady",
+    "brow": "neutral",
+    "mouth": "flat",
+    "palette": {
+      "accent": "#73DEFF",
+      "primary": "#F0FBFF",
+      "shadow": "#13283C",
+      "highlight": "#FFFFFF",
+      "secondary": "#B2EEFF",
+      "warning": "#FF7878"
+    }
+  }
 }

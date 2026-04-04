@@ -2,5 +2,27 @@
   "name": "happy",
   "seed": 12005,
   "open_values": [0.98, 0.96, 0.94, 0.92, 0.9, 0.91, 0.93, 0.95, 0.97, 0.99],
-  "glow_bias": 1.1
+  "style_prompt": "happy glowing creature eye",
+  "prompt_tags": ["smile", "warm glow", "lifted brows"],
+  "negative_prompt": "sad eyes, anger, dull lighting",
+  "fallback": {
+    "eye_gap": 88,
+    "eye_y": 120,
+    "eye_width": 66,
+    "eye_height": 32,
+    "iris_scale": 1.02,
+    "pupil_scale": 0.90,
+    "glow_bias": 1.18,
+    "motion": "bounce",
+    "brow": "happy",
+    "mouth": "smile",
+    "palette": {
+      "accent": "#74F7C0",
+      "primary": "#F4FFFB",
+      "shadow": "#13301F",
+      "highlight": "#FFFFFF",
+      "secondary": "#B9FFD9",
+      "warning": "#FF7B7B"
+    }
+  }
 }

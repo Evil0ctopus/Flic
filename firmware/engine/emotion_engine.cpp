@@ -45,6 +45,25 @@ String stateToString(EmotionState state) {
     }
 }
 
+
+String personalityStateForEmotion(const String& emotion) {
+    if (emotion == "curious") {
+        return "curious";
+    }
+    if (emotion == "happy") {
+        return "excited";
+    }
+    if (emotion == "sleepy") {
+        return "tired";
+    }
+    if (emotion == "surprised") {
+        return "confused";
+    }
+    if (emotion == "focused" || emotion == "thinking") {
+        return "focused";
+    }
+    return "neutral";
+}
 EmotionState stateFromString(const String& state) {
     if (state == "transitioning") {
         return EmotionState::Transitioning;
@@ -402,6 +421,7 @@ void EmotionEngine::onEmotionCommitted() {
 
     if (faceEngine_ != nullptr) {
         faceEngine_->setEmotion(currentEmotion_);
+        faceEngine_->setPersonalityState(personalityStateForEmotion(currentEmotion_));
     }
 
     WebUiEventHook::emit("emotion", String("{\"current\":\"") + currentEmotion_ + "\",\"target\":\"" + targetEmotion_ +

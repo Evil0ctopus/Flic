@@ -294,6 +294,9 @@ void PersonalityUI::showStatusLine(const String& title, const String& detail) {
     if (kDisableDisplayRendering) {
         return;
     }
+    if (faceEngine_ != nullptr && faceEngine_->isActive()) {
+        return;
+    }
 
     auto& display = M5.Display;
     display.startWrite();

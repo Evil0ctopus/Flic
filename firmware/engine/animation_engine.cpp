@@ -1,5 +1,6 @@
 #include "animation_engine.h"
 
+#include "../diagnostics/sd_diagnostics.h"
 #include "../diagnostics/webui_event_hook.h"
 #include "../subsystems/sd_manager.h"
 
@@ -8,10 +9,11 @@
 #include <SD.h>
 
 #include <vector>
+#include <cctype>
 
 namespace Flic {
 namespace {
-constexpr const char* kAnimationRoot = "/Flic/animations";
+constexpr const char* kAnimationRoot = "/Flic/animations/face/default";
 constexpr uint16_t kMinimumFps = 10;
 constexpr uint16_t kMaximumFps = 20;
 constexpr float kMinimumPlaybackSpeed = 0.25f;
@@ -58,21 +60,56 @@ struct Animation {
 };
 
 bool parseHexColor(const char* colorText, uint32_t& color) {
-    if (colorText == nullptr || colorText[0] != '#') {
+    if (colorText == nullptr) {
         return false;
     }
 
-    if (strlen(colorText) != 7) {
+    const char* start = colorText;
+    if (start[0] == '#') {
+        ++start;
+    }
+
+    const size_t len = strlen(start);
+    if (!(len == 6 || len == 8)) {
         return false;
     }
 
-    const uint32_t value = strtoul(colorText + 1, nullptr, 16);
+    for (size_t i = 0; i < len; ++i) {
+        if (!isxdigit(static_cast<unsigned char>(start[i]))) {
+            return false;
+        }
+    }
+
+    // Accept both RRGGBB and RRGGBBAA by ignoring optional alpha suffix.
+    char rgbText[7];
+    memcpy(rgbText, start, 6);
+    rgbText[6] = '\0';
+
+    const uint32_t value = strtoul(rgbText, nullptr, 16);
 
     color = value;
     return true;
 }
 
 bool loadAnimationDocument(const String& path, Animation& animation) {
+    if (!SdManager::isMounted()) {
+        Serial.println("Flic: SD not mounted, skipping face JSON load.");
+        return false;
+    }
+
+    String fileName = path;
+    int slash = fileName.lastIndexOf('/');
+    if (slash < 0) {
+        slash = fileName.lastIndexOf('\\');
+    }
+    if (slash >= 0) {
+        fileName = fileName.substring(slash + 1);
+    }
+
+    Serial.println(String("Loading face JSON: ") + fileName);
+    Serial.println(String("Resolved path: ") + path);
+    SdDiagnostics::logFaceLoad(fileName, path);
+
     File file = SD.open(path);
     if (!file) {
         return false;
@@ -100,6 +137,8 @@ bool loadAnimationDocument(const String& path, Animation& animation) {
     }
 
     animation.frames.clear();
+    uint32_t invalidColorCount = 0;
+
     for (JsonObject frameObject : frames) {
         Frame frame;
         frame.durationMs = frameObject["duration"] | 0;
@@ -114,19 +153,73 @@ bool loadAnimationDocument(const String& path, Animation& animation) {
             return false;
         }
 
-        for (JsonObject pixelObject : pixels) {
-            Pixel pixel;
-            pixel.x = pixelObject["x"] | 0;
-            pixel.y = pixelObject["y"] | 0;
-            const char* colorText = pixelObject["color"] | nullptr;
-            if (!parseHexColor(colorText, pixel.color)) {
-                Serial.printf("Flic: animation rejected (%s): invalid color\n", path.c_str());
-                return false;
+        for (JsonVariant pixelValue : pixels) {
+            Pixel pixel{};
+            pixel.x = 0;
+            pixel.y = 0;
+            pixel.color = 0xFFFFFF;
+            bool parsed = false;
+
+            if (pixelValue.is<JsonObject>()) {
+                JsonObject pixelObject = pixelValue.as<JsonObject>();
+                pixel.x = pixelObject["x"] | 0;
+                pixel.y = pixelObject["y"] | 0;
+
+                const char* colorText = pixelObject["color"] | nullptr;
+                if (colorText == nullptr) {
+                    colorText = pixelObject["c"] | nullptr;
+                }
+                if (colorText == nullptr) {
+                    colorText = pixelObject["hex"] | nullptr;
+                }
+
+                parsed = parseHexColor(colorText, pixel.color);
+                if (!parsed && !pixelObject["rgb"].isNull()) {
+                    pixel.color = static_cast<uint32_t>(pixelObject["rgb"].as<uint32_t>() & 0xFFFFFFU);
+                    parsed = true;
+                }
+
+                if (!parsed &&
+                    !pixelObject["r"].isNull() &&
+                    !pixelObject["g"].isNull() &&
+                    !pixelObject["b"].isNull()) {
+                    const uint8_t r = static_cast<uint8_t>(pixelObject["r"].as<uint32_t>() & 0xFFU);
+                    const uint8_t g = static_cast<uint8_t>(pixelObject["g"].as<uint32_t>() & 0xFFU);
+                    const uint8_t b = static_cast<uint8_t>(pixelObject["b"].as<uint32_t>() & 0xFFU);
+                    pixel.color = (static_cast<uint32_t>(r) << 16) |
+                                  (static_cast<uint32_t>(g) << 8) |
+                                  static_cast<uint32_t>(b);
+                    parsed = true;
+                }
+            } else if (pixelValue.is<JsonArray>()) {
+                JsonArray pixelArray = pixelValue.as<JsonArray>();
+                if (pixelArray.size() >= 2) {
+                    pixel.x = pixelArray[0] | 0;
+                    pixel.y = pixelArray[1] | 0;
+                }
+                if (pixelArray.size() >= 3) {
+                    const char* colorText = pixelArray[2] | nullptr;
+                    parsed = parseHexColor(colorText, pixel.color);
+                    if (!parsed && pixelArray[2].is<uint32_t>()) {
+                        pixel.color = static_cast<uint32_t>(pixelArray[2].as<uint32_t>() & 0xFFFFFFU);
+                        parsed = true;
+                    }
+                }
+            }
+
+            if (!parsed) {
+                ++invalidColorCount;
             }
             frame.pixels.push_back(pixel);
         }
 
         animation.frames.push_back(frame);
+    }
+
+    if (invalidColorCount > 0) {
+        Serial.printf("Flic: animation warning (%s): substituted %lu invalid color token(s)\n",
+                      path.c_str(),
+                      static_cast<unsigned long>(invalidColorCount));
     }
 
     return !animation.frames.empty();
@@ -193,7 +286,13 @@ bool AnimationEngine::begin() {
         Serial.println("Flic: animation worker unavailable; playback may be fallback synchronous");
     }
 
-    return SdManager::isMounted() && SD.exists(kAnimationRoot);
+    if (!SdManager::isMounted()) {
+        Serial.println("Flic: SD not mounted, skipping face JSON load.");
+        return false;
+    }
+
+    Serial.println("SD mounted, loading faces from: /Flic/animations/face/default/");
+    return SD.exists(kAnimationRoot);
 }
 
 float AnimationEngine::playbackSpeed() const {
@@ -210,6 +309,10 @@ void AnimationEngine::setPlaybackSpeed(float speed) {
 }
 
 bool AnimationEngine::hasRealAnimations() const {
+    if (!SdManager::isMounted()) {
+        return false;
+    }
+
     File root = SD.open(kAnimationRoot);
     if (!root || !root.isDirectory()) {
         return false;
@@ -261,6 +364,11 @@ bool AnimationEngine::playAnimation(const char* fileName) {
         return false;
     }
 
+    if (!SdManager::isMounted()) {
+        Serial.println("Flic: SD not mounted, skipping face JSON load.");
+        return false;
+    }
+
     String path = String(kAnimationRoot) + "/" + fileName;
     if (!SD.exists(path)) {
         return false;
@@ -303,19 +411,19 @@ bool AnimationEngine::playPreset(const String& preset) {
     }
 
     if (key == "happy_wiggle" || key == "wiggle") {
-        return playAnimation("happy_wiggle.json");
+        return playAnimation("emotion_happy.json");
     }
 
     if (key == "sleepy_fade" || key == "fade") {
-        return playAnimation("sleepy_fade.json");
+        return playAnimation("emotion_sleepy.json");
     }
 
     if (key == "surprise" || key == "surprised") {
-        return playAnimation("surprise.json");
+        return playAnimation("emotion_surprised.json");
     }
 
     if (key == "thinking" || key == "thinking_loop") {
-        return playAnimation("thinking_loop.json");
+        return playAnimation("emotion_curious.json");
     }
 
     if (key.startsWith("micro_")) {
@@ -330,19 +438,19 @@ bool AnimationEngine::playEmotionCue(const String& emotion) {
     WebUiEventHook::emit("animation", String("{\"kind\":\"emotion_cue\",\"value\":\"") + emotion + "\"}");
     String key = toLowerCopy(emotion);
     if (key == "calm") {
-        return playPreset("idle_breathing");
+        return playPreset("emotion_calm");
     }
     if (key == "curious") {
-        return playPreset("thinking_loop");
+        return playPreset("emotion_curious");
     }
     if (key == "happy") {
-        return playPreset("happy_wiggle");
+        return playPreset("emotion_happy");
     }
     if (key == "sleepy") {
-        return playPreset("sleepy_fade");
+        return playPreset("emotion_sleepy");
     }
     if (key == "surprised" || key == "warning" || key == "surprise") {
-        return playPreset("surprise");
+        return playPreset("emotion_surprised");
     }
 
     return playPreset(key);
@@ -372,6 +480,11 @@ bool AnimationEngine::generateFirstAnimationIfNeeded() {
 }
 
 bool AnimationEngine::loadFirstAnimationFromDisk(String& filePath) {
+    if (!SdManager::isMounted()) {
+        Serial.println("Flic: SD not mounted, skipping face JSON load.");
+        return false;
+    }
+
     File root = SD.open(kAnimationRoot);
     if (!root || !root.isDirectory()) {
         Serial.println("Flic: animation directory missing.");

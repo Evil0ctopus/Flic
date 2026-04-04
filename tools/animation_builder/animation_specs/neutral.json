@@ -1,0 +1,28 @@
+{
+  "name": "neutral",
+  "seed": 12010,
+  "open_values": [0.96, 0.95, 0.97, 0.98, 0.96, 0.94, 0.95, 0.97],
+  "style_prompt": "neutral balanced creature eye",
+  "prompt_tags": ["calm", "balanced", "resting"],
+  "negative_prompt": "extreme emotion, heavy motion, alarm, sadness",
+  "fallback": {
+    "eye_gap": 84,
+    "eye_y": 122,
+    "eye_width": 64,
+    "eye_height": 30,
+    "iris_scale": 0.98,
+    "pupil_scale": 0.90,
+    "glow_bias": 0.96,
+    "motion": "steady",
+    "brow": "neutral",
+    "mouth": "flat",
+    "palette": {
+      "accent": "#66D9FF",
+      "primary": "#F3FBFF",
+      "shadow": "#12283A",
+      "highlight": "#FFFFFF",
+      "secondary": "#A4E3FF",
+      "warning": "#FF8B8B"
+    }
+  }
+}

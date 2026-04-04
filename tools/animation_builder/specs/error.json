@@ -1,0 +1,94 @@
+﻿{
+    "emotion":  "error",
+    "frame_count":  9,
+    "easing":  "step_sharp",
+    "speed":  2.0,
+    "open_curve":  [
+                       0.9,
+                       0.7,
+                       0.92,
+                       0.68,
+                       0.95,
+                       0.66,
+                       0.9,
+                       0.74,
+                       0.88
+                   ],
+    "close_curve":  [
+                        0.1,
+                        0.3,
+                        0.08,
+                        0.32,
+                        0.05,
+                        0.34,
+                        0.1,
+                        0.26,
+                        0.12
+                    ],
+    "pupil_curve":  [
+                        0.52,
+                        0.46,
+                        0.58,
+                        0.44,
+                        0.6,
+                        0.43,
+                        0.57,
+                        0.47,
+                        0.54
+                    ],
+    "glow_curve":  [
+                       0.62,
+                       0.38,
+                       0.68,
+                       0.34,
+                       0.72,
+                       0.3,
+                       0.66,
+                       0.36,
+                       0.6
+                   ],
+    "micro_movement":  {
+                           "x_drift_px":  2.8,
+                           "y_drift_px":  1.5,
+                           "jitter_px":  0.55,
+                           "frequency_hz":  2.4,
+                           "phase_offset":  0.73
+                       },
+    "eyelid_behavior":  {
+                            "upper_lid_bias":  0.7,
+                            "lower_lid_bias":  0.3,
+                            "arc_lift":  -0.06,
+                            "squeeze":  0.2,
+                            "long_blink_probability":  0.03
+                        },
+    "pupil_dilation_rules":  {
+                                 "base":  0.5,
+                                 "min":  0.4,
+                                 "max":  0.64,
+                                 "light_response":  -0.28,
+                                 "attention_response":  0.3,
+                                 "emotional_gain":  0.34
+                             },
+    "emotion_timing":  {
+                           "hold_open_ms":  30,
+                           "hold_close_ms":  20,
+                           "transition_ms":  45,
+                           "blink_interval_ms":  900,
+                           "recovery_ms":  60
+                       },
+    "compositor":  {
+                       "y_offset":  0,
+                       "y_offset_clamp":  [
+                                              -14,
+                                              14
+                                          ],
+                       "glow_blend":  0.42,
+                       "spacing_delta":  1,
+                       "spacing_rules":  {
+
+                                         },
+                       "eye_width":  64,
+                       "eye_height":  32
+                   }
+}
+

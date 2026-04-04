@@ -1,0 +1,50 @@
+{
+  "idle": {
+    "positive": "close-up friendly robotic eyes, neutral calm expression, subtle reflective iris glow, clean faceplate, centered composition",
+    "negative": "blurry, noisy, overexposed, text, watermark, extra pupils, asymmetrical eyes, low quality"
+  },
+  "blink": {
+    "positive": "close-up robotic eyes transitioning through a natural blink, smooth eyelid motion, centered faceplate",
+    "negative": "stuttered eyelids, duplicate eyes, artifacts, text, watermark, low quality"
+  },
+  "listening": {
+    "positive": "attentive robotic eyes, slightly widened eyelids, focused pupils, gentle cool glow, centered composition",
+    "negative": "distracted gaze, heavy blur, text, watermark, malformed eyelids"
+  },
+  "thinking": {
+    "positive": "thoughtful robotic eyes, mild inward eyelid angle, subtle pupil drift, analytical expression",
+    "negative": "cross-eyed, jitter, heavy noise, text, watermark, low detail"
+  },
+  "speaking": {
+    "positive": "engaged robotic eyes with lively micro-movements, bright but controlled iris glow, centered face",
+    "negative": "flicker, over-saturated glow, blur, text, watermark, malformed pupils"
+  },
+  "happy": {
+    "positive": "happy robotic eyes, slightly lifted upper lids, warm iris glow, playful but clean expression",
+    "negative": "aggressive look, dull eyes, noise, text, watermark, extra features"
+  },
+  "sad": {
+    "positive": "sad robotic eyes, softened lids, reduced glow intensity, gentle downward emotional tone",
+    "negative": "angry expression, extreme darkness, blur, text, watermark"
+  },
+  "surprised": {
+    "positive": "surprised robotic eyes, widened eyelids, slightly enlarged pupils, bright crisp glow",
+    "negative": "horror style, distorted geometry, noise, text, watermark"
+  },
+  "angry": {
+    "positive": "angry robotic eyes, lowered upper lids, focused pupils, controlled intense glow",
+    "negative": "smiling expression, soft sleepy eyes, blur, text, watermark"
+  },
+  "sleepy": {
+    "positive": "sleepy robotic eyes, heavy lids, dim warm glow, relaxed expression",
+    "negative": "alert wide eyes, harsh glow, blur, text, watermark"
+  },
+  "error": {
+    "positive": "robotic warning eyes, constrained aperture, stabilized geometry, restrained alert glow",
+    "negative": "chaotic distortion, unreadable noise, text, watermark, low quality"
+  },
+  "neutral": {
+    "positive": "balanced robotic eyes, neutral eyelids, even iris glow, clean centered framing",
+    "negative": "emotionally exaggerated, blur, noise, text, watermark"
+  }
+}

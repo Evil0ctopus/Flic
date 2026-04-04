@@ -10,7 +10,18 @@ pip install -r tools/animation_builder/requirements.txt
 
 ## 2) Install ComfyUI + Flux model
 
-1. Install ComfyUI locally.
+1. Install ComfyUI locally (portable installer script):
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File tools/animation_builder/install_comfyui.ps1
+```
+
+Or run the VS Code task: `AnimationBuilder: Install ComfyUI`
+
+Installer behavior:
+- Uses fixed install path `C:/Flic/ComfyUI`
+- Installs/updates optional custom nodes used by some templates
+- If ComfyUI or required template nodes are missing at runtime, the default automation path falls back to a built-in local renderer
 2. Place Flux model files in your ComfyUI model directory (typically `ComfyUI/models/checkpoints` or your selected Flux loader path).
 3. Start ComfyUI and keep it running:
 
@@ -63,6 +74,16 @@ Wait for ComfyUI and then run all specs:
 ```bash
 python -m tools.animation_builder.run_when_comfy --all
 ```
+
+Strict CI mode (fail if required Comfy workflow nodes/custom nodes are missing):
+
+```bash
+python -m tools.animation_builder.run_when_comfy --all --strict-comfy
+```
+
+VS Code strict task: `Start ComfyUI + Generate Animations (strict)`
+
+Recommended production task: `Start ComfyUI + Generate Animations (auto)`
 
 Wait for ComfyUI and generate one animation:
 

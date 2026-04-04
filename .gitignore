@@ -5,3 +5,5 @@
 .vscode/ipch
 firmware/config.local.h
 firmware/config_webui.local.h
+build/
+build/animations/output/

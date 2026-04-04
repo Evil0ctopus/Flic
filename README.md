@@ -93,3 +93,11 @@ The firmware creates these directories at mount time and keeps legacy `/ai/*` di
 
 ## Build
 Open the workspace in PlatformIO and use the `m5cores3` environment from `platformio.ini`.
+
+## Recovery
+
+For full SD/device recovery and validation, run the VS Code task `Flic: Full System & SD Recovery`.
+
+Quick asset-only reinstall is available via `Flic: Quick SD Reinstall (Assets Only)`.
+
+Detailed steps and expected Serial diagnostics are documented in `RECOVERY.md`.

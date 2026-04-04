@@ -13,6 +13,7 @@ struct FaceSettings {
     bool idleEnabled = true;
     float glowIntensity = 0.8f;
     String eyeColor = "#AEE6FF";
+    String emotionAnimationMapJson = "{}";
     bool aiCanModify = false;
     bool aiCanCreate = false;
 };

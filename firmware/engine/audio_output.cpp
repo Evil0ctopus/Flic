@@ -1,5 +1,7 @@
 #include "audio_output.h"
 
+#include "../diagnostics/sd_diagnostics.h"
+
 #include <M5Unified.h>
 #include <ESP8266SAM.h>
 #include <AudioOutput.h>
@@ -369,6 +371,8 @@ void AudioOutput::playEmotionTone(const String& emotion) {
         return;
     }
 
+    SdDiagnostics::logSoundPlay(String("tone:") + emotion);
+
     float freq = 420.0f;
     uint16_t durationMs = 80;
 
@@ -394,6 +398,8 @@ void AudioOutput::playCreatureSound(const String& sound) {
     if (!M5.Speaker.isEnabled()) {
         return;
     }
+
+    SdDiagnostics::logSoundPlay(String("creature:") + sound);
 
     if (sound == "purr") {
         M5.Speaker.tone(180.0f, 90);

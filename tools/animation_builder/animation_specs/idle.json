@@ -1,5 +1,28 @@
 {
   "name": "idle",
   "seed": 12002,
-  "open_values": [0.95, 0.97, 0.99, 1.0, 0.98, 0.96, 0.94, 0.93, 0.95, 0.97, 0.99, 0.98]
+  "open_values": [0.95, 0.97, 0.99, 1.0, 0.98, 0.96, 0.94, 0.93, 0.95, 0.97, 0.99, 0.98],
+  "style_prompt": "calm idle creature eye",
+  "prompt_tags": ["subtle breathing", "soft cyan glow", "resting"],
+  "negative_prompt": "extreme emotion, open mouth, alarm, heavy glitch",
+  "fallback": {
+    "eye_gap": 84,
+    "eye_y": 122,
+    "eye_width": 64,
+    "eye_height": 30,
+    "iris_scale": 0.98,
+    "pupil_scale": 0.92,
+    "glow_bias": 1.00,
+    "motion": "steady",
+    "brow": "neutral",
+    "mouth": "flat",
+    "palette": {
+      "accent": "#57D9FF",
+      "primary": "#EEFBFF",
+      "shadow": "#10263A",
+      "highlight": "#FFFFFF",
+      "secondary": "#A4E8FF",
+      "warning": "#FF7A7A"
+    }
+  }
 }

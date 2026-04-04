@@ -36,6 +36,8 @@ public:
     void setFaceSetEmotionHandler(ActionHandler handler);
     void setFaceReloadHandler(ActionHandler handler);
     void setFaceValidateProvider(JsonProvider provider);
+    void setFaceTelemetryProvider(JsonProvider provider);
+    void setFaceTelemetryHandler(ActionHandler handler);
     void setFaceSnapshotPathProvider(DataProvider provider);
     void setLogsProvider(JsonProvider provider);
 
@@ -70,6 +72,8 @@ private:
     void handleApiFaceSetEmotion();
     void handleApiFaceReload();
     void handleApiFaceValidate();
+    void handleApiFaceTelemetry();
+    void handleApiFaceTelemetryPost();
     void handleApiFaceSnapshot();
     void handleApiSdList();
     void handleApiSdUpload();
@@ -116,6 +120,8 @@ private:
     ActionHandler faceSetEmotionHandler_ = nullptr;
     ActionHandler faceReloadHandler_ = nullptr;
     JsonProvider faceValidateProvider_ = nullptr;
+    JsonProvider faceTelemetryProvider_ = nullptr;
+    ActionHandler faceTelemetryHandler_ = nullptr;
     DataProvider faceSnapshotPathProvider_ = nullptr;
     JsonProvider logsProvider_ = nullptr;
 

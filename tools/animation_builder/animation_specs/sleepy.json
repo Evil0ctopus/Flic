@@ -1,0 +1,28 @@
+{
+  "name": "sleepy",
+  "seed": 12008,
+  "open_values": [0.56, 0.48, 0.44, 0.40, 0.38, 0.42, 0.46, 0.52],
+  "style_prompt": "drowsy sleepy creature eye",
+  "prompt_tags": ["heavy lids", "soft glow", "slow breathing"],
+  "negative_prompt": "alert expression, wide eyes, high energy",
+  "fallback": {
+    "eye_gap": 86,
+    "eye_y": 129,
+    "eye_width": 66,
+    "eye_height": 22,
+    "iris_scale": 0.90,
+    "pupil_scale": 0.76,
+    "glow_bias": 0.82,
+    "motion": "lean_left",
+    "brow": "sleepy",
+    "mouth": "flat",
+    "palette": {
+      "accent": "#82C8FF",
+      "primary": "#EAF4FF",
+      "shadow": "#11273A",
+      "highlight": "#FFFFFF",
+      "secondary": "#A9D8FF",
+      "warning": "#7CC0FF"
+    }
+  }
+}

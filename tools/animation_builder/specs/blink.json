@@ -1,0 +1,74 @@
+﻿{
+    "emotion":  "blink",
+    "frame_count":  4,
+    "easing":  "ease_in_out_quad",
+    "speed":  2.5,
+    "open_curve":  [
+                       1.0,
+                       0.32,
+                       0.32,
+                       1.0
+                   ],
+    "close_curve":  [
+                        0.0,
+                        0.68,
+                        0.68,
+                        0.0
+                    ],
+    "pupil_curve":  [
+                        0.53,
+                        0.51,
+                        0.51,
+                        0.53
+                    ],
+    "glow_curve":  [
+                       0.36,
+                       0.34,
+                       0.34,
+                       0.36
+                   ],
+    "micro_movement":  {
+                           "x_drift_px":  0.25,
+                           "y_drift_px":  0.1,
+                           "jitter_px":  0.05,
+                           "frequency_hz":  0.4,
+                           "phase_offset":  0.0
+                       },
+    "eyelid_behavior":  {
+                            "upper_lid_bias":  0.5,
+                            "lower_lid_bias":  0.5,
+                            "arc_lift":  0.0,
+                            "squeeze":  0.22,
+                            "long_blink_probability":  0.0
+                        },
+    "pupil_dilation_rules":  {
+                                 "base":  0.53,
+                                 "min":  0.5,
+                                 "max":  0.56,
+                                 "light_response":  -0.1,
+                                 "attention_response":  0.02,
+                                 "emotional_gain":  0.05
+                             },
+    "emotion_timing":  {
+                           "hold_open_ms":  0,
+                           "hold_close_ms":  12,
+                           "transition_ms":  36,
+                           "blink_interval_ms":  0,
+                           "recovery_ms":  42
+                       },
+    "compositor":  {
+                       "y_offset":  0,
+                       "y_offset_clamp":  [
+                                              -14,
+                                              14
+                                          ],
+                       "glow_blend":  0.2,
+                       "spacing_delta":  0,
+                       "spacing_rules":  {
+
+                                         },
+                       "eye_width":  64,
+                       "eye_height":  32
+                   }
+}
+

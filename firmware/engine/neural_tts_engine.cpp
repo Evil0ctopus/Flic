@@ -259,6 +259,10 @@ bool NeuralTtsEngine::attemptNeuralInference(const String& text, const String& e
         return false;
     }
 
+    if (!SdManager::isMounted()) {
+        return false;
+    }
+
     const String modelPath = String(kVoicesDir) + "/" + activeVoiceModel_;
     if (!SD.exists(modelPath)) {
         return false;

@@ -1,0 +1,28 @@
+{
+  "name": "speaking",
+  "seed": 12004,
+  "open_values": [0.92, 0.88, 0.84, 0.9, 0.98, 1.02, 0.96, 0.86, 0.8, 0.88, 0.94, 0.99],
+  "style_prompt": "animated expressive speaking eye",
+  "prompt_tags": ["talking", "animated mouth", "gentle pulse"],
+  "negative_prompt": "static pose, closed mouth, dead eyes, blank stare",
+  "fallback": {
+    "eye_gap": 86,
+    "eye_y": 121,
+    "eye_width": 66,
+    "eye_height": 34,
+    "iris_scale": 1.0,
+    "pupil_scale": 0.95,
+    "glow_bias": 1.05,
+    "motion": "bounce",
+    "brow": "neutral",
+    "mouth": "talk",
+    "palette": {
+      "accent": "#5ED9FF",
+      "primary": "#E9FAFF",
+      "shadow": "#13263A",
+      "highlight": "#FFFFFF",
+      "secondary": "#9EE8FF",
+      "warning": "#FF6A6A"
+    }
+  }
+}

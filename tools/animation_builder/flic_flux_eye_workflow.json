@@ -1,49 +1,77 @@
 {
   "1": {
-    "class_type": "CLIPTextEncode",
+    "class_type": "CheckpointLoaderSimple",
     "inputs": {
-      "text": "",
-      "clip": ["10", 1]
+      "ckpt_name": "REPLACE_ME_CHECKPOINT"
     },
     "_meta": {
-      "title": "STYLE_PROMPT"
+      "title": "CHECKPOINT"
     }
   },
   "2": {
     "class_type": "CLIPTextEncode",
     "inputs": {
       "text": "",
-      "clip": ["10", 1]
+      "clip": ["1", 1]
+    },
+    "_meta": {
+      "title": "STYLE_PROMPT"
+    }
+  },
+  "3": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "text": "",
+      "clip": ["1", 1]
     },
     "_meta": {
       "title": "NEG_PROMPT"
     }
   },
-  "3": {
-    "class_type": "PrimitiveNode",
-    "inputs": {
-      "eyelid_strength": 0.0,
-      "iris_scale": 1.0,
-      "pupil_visibility": 1.0,
-      "glow": 1.0
-    },
-    "_meta": {
-      "title": "EYELID_NODE"
-    }
-  },
   "4": {
-    "class_type": "Seed",
+    "class_type": "EmptyLatentImage",
     "inputs": {
-      "seed": 12345
+      "width": 240,
+      "height": 240,
+      "batch_size": 1
     },
     "_meta": {
-      "title": "SEED"
+      "title": "LATENT"
     }
   },
   "5": {
-    "class_type": "ImageOutput",
+    "class_type": "KSampler",
     "inputs": {
-      "images": ["11", 0]
+      "seed": 12345,
+      "steps": 16,
+      "cfg": 5.5,
+      "sampler_name": "dpmpp_2m_sde",
+      "scheduler": "karras",
+      "denoise": 1.0,
+      "model": ["1", 0],
+      "positive": ["2", 0],
+      "negative": ["3", 0],
+      "latent_image": ["4", 0]
+    },
+    "_meta": {
+      "title": "SAMPLER"
+    }
+  },
+  "6": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "samples": ["5", 0],
+      "vae": ["1", 2]
+    },
+    "_meta": {
+      "title": "DECODER"
+    }
+  },
+  "7": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "filename_prefix": "flic_face",
+      "images": ["6", 0]
     },
     "_meta": {
       "title": "IMAGE"

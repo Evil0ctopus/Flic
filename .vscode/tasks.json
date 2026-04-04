@@ -61,25 +61,6 @@
 			"group": "build"
 		},
 		{
-			"label": "Decode Addresses",
-			"type": "shell",
-			"command": "python",
-			"args": [
-				"-c",
-				"import pathlib, subprocess; root=pathlib.Path(r\"C:\\\\Users\\\\jlors\\\\OneDrive\\\\Desktop\\\\Flic\"); elf=root/\".pio/build/m5cores3/firmware.elf\"; tool=next(root.glob(\".pio/packages/**/xtensa-esp32s3-elf-addr2line.exe\")); addrs=[\"0x42017e57\",\"0x42019628\",\"0x42013fb0\",\"0x4206611a\",\"0x4037bb67\"]; print(subprocess.check_output([str(tool),\"-pfiaC\",\"-e\",str(elf),*addrs], text=True, errors=\"replace\"))"
-			],
-			"group": "build"
-		},
-		{
-			"label": "Decode Addresses Script",
-			"type": "shell",
-			"command": "python",
-			"args": [
-				"ai/scripts/tmp_decode_addrs.py"
-			],
-			"group": "build"
-		},
-		{
 			"label": "Decode Addresses Script",
 			"type": "shell",
 			"command": "python",
@@ -111,13 +92,160 @@
 			]
 		},
 		{
-			"label": "AnimationBuilder: Check ComfyUI",
+			"label": "AnimationBuilder: Install ComfyUI",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-NoProfile",
+				"-ExecutionPolicy",
+				"Bypass",
+				"-File",
+				"tools/animation_builder/install_comfyui.ps1"
+			],
+			"problemMatcher": [],
+			"presentation": {
+				"reveal": "always",
+				"panel": "dedicated",
+				"showReuseMessage": false,
+				"clear": true
+			}
+		},
+		{
+			"label": "Verify Flic ComfyUI Installation",
 			"type": "shell",
 			"command": "python",
 			"args": [
-				"-c",
-				"import urllib.request;print(urllib.request.urlopen('http://127.0.0.1:8188/system_stats',timeout=3).status)"
-			]
+				"tools/animation_builder/verify_installation.py"
+			],
+			"problemMatcher": [],
+			"presentation": {
+				"reveal": "always",
+				"panel": "dedicated",
+				"showReuseMessage": false,
+				"clear": true
+			}
+		},
+		{
+			"label": "Run First-Time Setup Wizard",
+			"type": "shell",
+			"command": "python",
+			"args": [
+				"tools/animation_builder/first_time_setup.py"
+			],
+			"problemMatcher": [],
+			"presentation": {
+				"reveal": "always",
+				"panel": "dedicated",
+				"showReuseMessage": false,
+				"clear": true
+			}
+		},
+		{
+			"label": "AnimationBuilder: Sync Face Frames to SD",
+			"type": "shell",
+			"command": "python",
+			"args": [
+				"tools/animation_builder/sync_face_frames_to_sd.py"
+			],
+			"problemMatcher": [],
+			"presentation": {
+				"reveal": "always",
+				"panel": "dedicated",
+				"showReuseMessage": false,
+				"clear": true
+			}
+		},
+		{
+			"label": "Repair SD Card (Full Diagnostic + Purge + Rebuild)",
+			"type": "shell",
+			"command": "python",
+			"args": [
+				"tools/animation_builder/sd_repair.py"
+			],
+			"problemMatcher": [],
+			"presentation": {
+				"reveal": "always",
+				"panel": "dedicated",
+				"showReuseMessage": false,
+				"clear": true
+			}
+		},
+		{
+			"label": "Generate & Install Activation Pulse Boot Animation",
+			"type": "shell",
+			"command": "python",
+			"args": [
+				"tools/boot_animation/generate_activation_pulse.py"
+			],
+			"problemMatcher": [],
+			"presentation": {
+				"reveal": "always",
+				"panel": "dedicated",
+				"showReuseMessage": false,
+				"clear": true
+			}
+		},
+		{
+			"label": "AnimationBuilder: Clean SD Animations (idle only)",
+			"type": "shell",
+			"command": "python",
+			"args": [
+				"tools/animation_builder/sync_face_frames_to_sd.py"
+			],
+			"problemMatcher": [],
+			"presentation": {
+				"reveal": "always",
+				"panel": "dedicated",
+				"showReuseMessage": false,
+				"clear": true
+			}
+		},
+		{
+			"label": "Generate Full Emotion Suite + Sync to SD",
+			"type": "shell",
+			"command": "python",
+			"args": [
+				"tools/animation_builder/run_full_emotion_suite.py",
+				"--strict-comfy"
+			],
+			"problemMatcher": [],
+			"presentation": {
+				"reveal": "always",
+				"panel": "dedicated",
+				"showReuseMessage": false,
+				"clear": true
+			}
+		},
+		{
+			"label": "Generate Full Emotion Suite (Model or Fallback) + Two-Eye Composite + Sync to SD",
+			"type": "shell",
+			"command": "python",
+			"args": [
+				"tools/animation_builder/run_full_emotion_suite.py",
+				"--strict-comfy"
+			],
+			"problemMatcher": [],
+			"presentation": {
+				"reveal": "always",
+				"panel": "dedicated",
+				"showReuseMessage": false,
+				"clear": true
+			}
+		},
+		{
+			"label": "Generate Full Emotion Suite + Sync to SD (fallback allowed)",
+			"type": "shell",
+			"command": "python",
+			"args": [
+				"tools/animation_builder/run_full_emotion_suite.py"
+			],
+			"problemMatcher": [],
+			"presentation": {
+				"reveal": "always",
+				"panel": "dedicated",
+				"showReuseMessage": false,
+				"clear": true
+			}
 		},
 		{
 			"label": "AnimationBuilder: Check ComfyUI",
@@ -125,7 +253,7 @@
 			"command": "python",
 			"args": [
 				"-c",
-				"import urllib.request;print(urllib.request.urlopen(\"http://127.0.0.1:8188/system_stats\",timeout=3).status)"
+				"import urllib.request;print(urllib.request.urlopen('http://127.0.0.1:8188/system_stats',timeout=3).status)"
 			]
 		},
 		{
@@ -158,15 +286,6 @@
 			]
 		},
 		{
-			"label": "AnimationBuilder: Check Comfy Port",
-			"type": "shell",
-			"command": "python",
-			"args": [
-				"-c",
-				"import socket;s=socket.socket();print(\"OPEN\" if s.connect_ex((\"127.0.0.1\",8188))==0 else \"CLOSED\")"
-			]
-		},
-		{
 			"label": "AnimationBuilder: Check Comfy Script",
 			"type": "shell",
 			"command": "python",
@@ -196,15 +315,6 @@
 			]
 		},
 		{
-			"label": "AnimationBuilder: Check Comfy Script",
-			"type": "shell",
-			"command": "python",
-			"args": [
-				"-m",
-				"tools.animation_builder.check_comfy"
-			]
-		},
-		{
 			"label": "AnimationBuilder: Generate blink wait",
 			"type": "shell",
 			"command": "python",
@@ -214,16 +324,6 @@
 				"blink",
 				"--wait-for-comfy",
 				"30"
-			]
-		},
-		{
-			"label": "AnimationBuilder: Compile check",
-			"type": "shell",
-			"command": "python",
-			"args": [
-				"-m",
-				"compileall",
-				"tools/animation_builder"
 			]
 		},
 		{
@@ -399,6 +499,406 @@
 			"isBackground": false,
 			"problemMatcher": [],
 			"group": "build"
+		},
+		{
+			"label": "Git amend include vscode",
+			"type": "shell",
+			"command": "git",
+			"args": [
+				"commit",
+				"--amend",
+				"--no-edit"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "Git force push main",
+			"type": "shell",
+			"command": "git",
+			"args": [
+				"push",
+				"--force-with-lease",
+				"origin",
+				"main"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "Git final hash 2",
+			"type": "shell",
+			"command": "git",
+			"args": [
+				"rev-parse",
+				"HEAD"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "Git final status 2",
+			"type": "shell",
+			"command": "git",
+			"args": [
+				"status",
+				"--short",
+				"--branch"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "Git final remote 2",
+			"type": "shell",
+			"command": "git",
+			"args": [
+				"remote",
+				"-v"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "ComfyUI",
+			"type": "shell",
+			"command": "python",
+			"args": [
+				"tools/animation_builder/vscode_start_comfy.py",
+				"--comfy-dir",
+				"C:/Flic/ComfyUI"
+			],
+			"isBackground": true,
+			"problemMatcher": [],
+			"presentation": {
+				"reveal": "always",
+				"panel": "dedicated",
+				"group": "ComfyUI",
+				"showReuseMessage": false,
+				"clear": true
+			}
+		},
+		{
+			"label": "AnimationBuilder: Run all when Comfy ready",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-NoProfile",
+				"-ExecutionPolicy",
+				"Bypass",
+				"-Command",
+				"python tools/animation_builder/run_when_comfy.py --all --max-wait 600; if ($LASTEXITCODE -eq 0) { Write-Host 'SUCCESS: Animation pipeline complete.' } else { Write-Host 'FAILED: ComfyUI not ready or generation error.'; exit $LASTEXITCODE }"
+			],
+			"problemMatcher": [],
+			"presentation": {
+				"reveal": "always",
+				"panel": "dedicated",
+				"showReuseMessage": false,
+				"clear": true
+			}
+		},
+		{
+			"label": "AnimationBuilder: Run all when Comfy ready (strict)",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-NoProfile",
+				"-ExecutionPolicy",
+				"Bypass",
+				"-Command",
+				"python tools/animation_builder/run_when_comfy.py --all --strict-comfy --max-wait 600; if ($LASTEXITCODE -eq 0) { Write-Host 'SUCCESS: Strict animation pipeline complete.' } else { Write-Host 'FAILED: Strict Comfy pipeline error.'; exit $LASTEXITCODE }"
+			],
+			"problemMatcher": [],
+			"presentation": {
+				"reveal": "always",
+				"panel": "dedicated",
+				"showReuseMessage": false,
+				"clear": true
+			}
+		},
+		{
+			"label": "Start ComfyUI + Generate Animations",
+			"dependsOn": [
+				"ComfyUI",
+				"AnimationBuilder: Run all when Comfy ready"
+			],
+			"dependsOrder": "parallel",
+			"problemMatcher": []
+		},
+		{
+			"label": "ComfyUI (auto)",
+			"type": "shell",
+			"command": "python",
+			"args": [
+				"tools/animation_builder/vscode_start_comfy.py",
+				"--comfy-dir",
+				"C:/Flic/ComfyUI"
+			],
+			"isBackground": true,
+			"problemMatcher": [],
+			"presentation": {
+				"reveal": "always",
+				"panel": "dedicated",
+				"group": "ComfyUI",
+				"showReuseMessage": false,
+				"clear": true
+			}
+		},
+		{
+			"label": "Start ComfyUI + Generate Animations (auto)",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-NoProfile",
+				"-ExecutionPolicy",
+				"Bypass",
+				"-Command",
+				"python tools/animation_builder/run_when_comfy.py --all --max-wait 600; if ($LASTEXITCODE -eq 0) { Write-Host 'SUCCESS: Animation pipeline complete.' } else { Write-Host 'FAILED: ComfyUI not ready or generation error.'; exit $LASTEXITCODE }"
+			],
+			"problemMatcher": [],
+			"presentation": {
+				"reveal": "always",
+				"panel": "dedicated",
+				"showReuseMessage": false,
+				"clear": true
+			}
+		},
+		{
+			"label": "Start ComfyUI + Generate Animations (strict)",
+			"dependsOn": [
+				"ComfyUI",
+				"AnimationBuilder: Run all when Comfy ready (strict)"
+			],
+			"dependsOrder": "parallel",
+			"problemMatcher": []
+		},
+		{
+			"label": "Install ComfyUI + Start + Generate (auto)",
+			"dependsOn": [
+				"AnimationBuilder: Install ComfyUI",
+				"Start ComfyUI + Generate Animations (auto)"
+			],
+			"dependsOrder": "sequence",
+			"problemMatcher": []
+		},
+		{
+			"label": "AnimationBuilder: Compile comfy starter",
+			"type": "shell",
+			"command": "python",
+			"args": [
+				"-m",
+				"compileall",
+				"tools/animation_builder/vscode_start_comfy.py"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "ComfyUI auto direct test",
+			"type": "shell",
+			"command": "python",
+			"args": [
+				"tools/animation_builder/vscode_start_comfy.py",
+				"--comfy-dir",
+				"C:/Flic/ComfyUI"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "Boot: Purge SD boot folder",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-NoProfile",
+				"-ExecutionPolicy",
+				"Bypass",
+				"-Command",
+				"if (Test-Path 'D:/Flic/boot') { Get-ChildItem -Path 'D:/Flic/boot' -Force | Remove-Item -Recurse -Force }; if (-not (Test-Path 'D:/Flic/boot')) { New-Item -ItemType Directory -Path 'D:/Flic/boot' | Out-Null }; Write-Host 'PURGED'"
+			],
+			"isBackground": false,
+			"group": "build"
+		},
+		{
+			"label": "Boot: Regenerate + install to SD",
+			"type": "shell",
+			"command": "python",
+			"args": [
+				"tools/boot_animation/generate_activation_pulse.py",
+				"--sd-boot-root",
+				"D:/Flic/boot"
+			],
+			"isBackground": false,
+			"group": "build"
+		},
+		{
+			"label": "Boot: Strict Comfy regen verify",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-NoProfile",
+				"-ExecutionPolicy",
+				"Bypass",
+				"-Command",
+				"python tools/boot_animation/generate_activation_pulse.py --strict-comfy --wait-for-comfy 300 --sd-boot-root D:/Flic/boot; if ($LASTEXITCODE -eq 0) { Write-Host 'STRICT_COMFY_OK' } else { Write-Host 'STRICT_COMFY_FAIL'; exit $LASTEXITCODE }"
+			],
+			"isBackground": false,
+			"group": "build"
+		},
+		{
+			"label": "Purge → Generate 320x240 Activation Pulse → Install Boot Animation",
+			"type": "shell",
+			"command": "python",
+			"args": [
+				"tools/boot_animation/generate_activation_pulse.py",
+				"--strict-comfy",
+				"--wait-for-comfy",
+				"300"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build",
+			"presentation": {
+				"reveal": "always",
+				"panel": "dedicated",
+				"showReuseMessage": false,
+				"clear": true
+			}
+		},
+		{
+			"label": "Boot: Orchestrator verify run",
+			"type": "shell",
+			"command": "python",
+			"args": [
+				"tools/boot_animation/generate_activation_pulse.py",
+				"--strict-comfy",
+				"--wait-for-comfy",
+				"300"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "Purge Old Faces \u2192 Install Unified Faces \u2192 Verify Runtime Load (Preserve Boot Animation)",
+			"type": "shell",
+			"command": "python",
+			"args": [
+				"tools/face_deploy/unified_face_deploy.py"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build",
+			"presentation": {
+				"reveal": "always",
+				"panel": "dedicated",
+				"showReuseMessage": false,
+				"clear": true
+			}
+		},
+		{
+			"label": "Flic: Full System & SD Recovery",
+			"type": "shell",
+			"command": "python",
+			"args": [
+				"tools/system_recovery/sd_health.py",
+				"--mode",
+				"full"
+			],
+			"problemMatcher": [],
+			"group": "build",
+			"presentation": {
+				"reveal": "always",
+				"panel": "dedicated",
+				"showReuseMessage": false,
+				"clear": true
+			}
+		},
+		{
+			"label": "Flic: Quick SD Reinstall (Assets Only)",
+			"type": "shell",
+			"command": "python",
+			"args": [
+				"tools/system_recovery/sd_health.py",
+				"--mode",
+				"quick"
+			],
+			"problemMatcher": [],
+			"group": "build",
+			"presentation": {
+				"reveal": "always",
+				"panel": "dedicated",
+				"showReuseMessage": false,
+				"clear": true
+			}
+		},
+		{
+			"label": "Flic: SD Health + Asset Reinstall",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-NoProfile",
+				"-ExecutionPolicy",
+				"Bypass",
+				"-Command",
+				"python tools/sd_health_check.py; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; python tools/install_assets.py; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; Write-Host 'Now flash firmware.'; Write-Host 'Reboot device.'; Write-Host 'Open Serial Monitor and confirm:'; Write-Host ' - Flic: SD mounted successfully.'; Write-Host ' - No SD MOUNT FAILED messages.'; Write-Host ' - Boot frames and faces are being loaded from SD.'"
+			],
+			"problemMatcher": [],
+			"group": "build",
+			"presentation": {
+				"reveal": "always",
+				"panel": "dedicated",
+				"showReuseMessage": false,
+				"clear": true
+			}
+		},
+		{
+			"label": "Monitor CoreS3 SD Boot",
+			"type": "process",
+			"command": "powershell",
+			"args": [
+				"-NoProfile",
+				"-ExecutionPolicy",
+				"Bypass",
+				"-Command",
+				"$port='COM9'; $baud=115200; $idlePattern='boot expression demo end|SD fallback face enabled|Flic: WebUI ready'; $until=[DateTime]::UtcNow.AddSeconds(10); Clear-Host; $sp=New-Object System.IO.Ports.SerialPort($port,$baud,[System.IO.Ports.Parity]::None,8,[System.IO.Ports.StopBits]::One); $sp.ReadTimeout=200; try { $sp.Open(); while ([DateTime]::UtcNow -lt $until) { try { $line=$sp.ReadLine(); if ($null -ne $line) { [Console]::Out.Write($line); [Console]::Out.Write([Environment]::NewLine); if ($line -match $idlePattern) { break } } } catch [System.TimeoutException] { } } } finally { if ($sp -and $sp.IsOpen) { $sp.Close() } }"
+			],
+			"problemMatcher": [],
+			"presentation": {
+				"reveal": "always",
+				"panel": "dedicated",
+				"showReuseMessage": false,
+				"clear": true
+			}
+		},
+		{
+			"label": "CoreS3 SD Diagnostics Monitor",
+			"type": "shell",
+			"command": "python",
+			"args": [
+				"-m",
+				"platformio",
+				"device",
+				"monitor",
+				"--baud",
+				"115200",
+				"--filter",
+				"direct"
+			],
+			"problemMatcher": [],
+			"presentation": {
+				"reveal": "always",
+				"panel": "dedicated",
+				"showReuseMessage": false,
+				"clear": true
+			}
 		}
 	]
 }

@@ -33,6 +33,16 @@ def _request_json(url: str, method: str = "GET", payload: dict[str, Any] | None 
                 return json.loads(raw)
             except json.JSONDecodeError as exc:
                 raise ComfyApiError("COMFY_ERROR", f"Invalid JSON response from ComfyUI endpoint: {url}") from exc
+    except urllib.error.HTTPError as exc:
+        detail = ""
+        try:
+            detail = exc.read().decode("utf-8", errors="replace")
+        except Exception:
+            detail = ""
+        message = f"ComfyUI HTTP {exc.code} at {url}"
+        if detail.strip():
+            message = f"{message}: {detail.strip()}"
+        raise ComfyApiError("COMFY_ERROR", message) from exc
     except socket.timeout as exc:
         raise ComfyApiError("COMFY_TIMEOUT", f"ComfyUI request timed out: {url}") from exc
     except urllib.error.URLError as exc:
@@ -54,12 +64,40 @@ def check_server(api_url: str = COMFY_API_URL, timeout: float = 3.0) -> bool:
         return False
 
 
-def queue_prompt(workflow: dict[str, Any], api_url: str = COMFY_API_URL) -> str:
-    response = _request_json(f"{api_url}/prompt", method="POST", payload={"prompt": workflow})
-    prompt_id = response.get("prompt_id")
-    if not prompt_id:
-        raise ComfyApiError("COMFY_ERROR", "ComfyUI response missing prompt_id")
-    return str(prompt_id)
+def get_available_node_types(api_url: str = COMFY_API_URL, timeout: float = 10.0) -> set[str]:
+    try:
+        info = _request_json(f"{api_url}/object_info", timeout=timeout)
+    except ComfyApiError:
+        return set()
+    return {str(k) for k in info.keys()}
+
+
+def queue_prompt(
+    workflow: dict[str, Any],
+    api_url: str = COMFY_API_URL,
+    retries: int = 10,
+    retry_delay_seconds: float = 1.0,
+) -> str:
+    last_error: ComfyApiError | None = None
+    for attempt in range(max(1, retries)):
+        try:
+            response = _request_json(f"{api_url}/prompt", method="POST", payload={"prompt": workflow})
+            prompt_id = response.get("prompt_id")
+            if not prompt_id:
+                raise ComfyApiError("COMFY_ERROR", "ComfyUI response missing prompt_id")
+            return str(prompt_id)
+        except ComfyApiError as exc:
+            last_error = exc
+            # ComfyUI can report /system_stats before prompt queueing is fully ready.
+            if exc.code not in {"COMFY_DOWN", "COMFY_TIMEOUT"}:
+                raise
+            if attempt == max(1, retries) - 1:
+                raise
+            time.sleep(max(0.1, retry_delay_seconds))
+
+    if last_error is not None:
+        raise last_error
+    raise ComfyApiError("COMFY_ERROR", "Unexpected queue_prompt failure")
 
 
 def wait_for_result(prompt_id: str, api_url: str = COMFY_API_URL, timeout_seconds: float = 240.0, poll_seconds: float = 1.0) -> dict[str, Any]:

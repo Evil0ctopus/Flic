@@ -1,0 +1,28 @@
+{
+  "name": "angry",
+  "seed": 12007,
+  "open_values": [0.72, 0.68, 0.64, 0.7, 0.76, 0.74, 0.69, 0.66],
+  "style_prompt": "intense angry creature eye",
+  "prompt_tags": ["stern", "slanted brows", "red warning glow"],
+  "negative_prompt": "soft smile, sleepy look, playful expression",
+  "fallback": {
+    "eye_gap": 82,
+    "eye_y": 124,
+    "eye_width": 64,
+    "eye_height": 26,
+    "iris_scale": 0.94,
+    "pupil_scale": 0.86,
+    "glow_bias": 1.20,
+    "motion": "jitter",
+    "brow": "angry",
+    "mouth": "flat",
+    "palette": {
+      "accent": "#FF725E",
+      "primary": "#FFF3EF",
+      "shadow": "#3B1111",
+      "highlight": "#FFFFFF",
+      "secondary": "#FFAA9E",
+      "warning": "#FF3B30"
+    }
+  }
+}

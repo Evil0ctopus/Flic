@@ -2,5 +2,27 @@
   "name": "sad",
   "seed": 12006,
   "open_values": [0.9, 0.88, 0.86, 0.84, 0.82, 0.8, 0.81, 0.83, 0.85, 0.87],
-  "glow_bias": 0.85
+  "style_prompt": "melancholy sad creature eye",
+  "prompt_tags": ["downturned brows", "cool glow", "gentle frown"],
+  "negative_prompt": "smile, bright energy, excited expression",
+  "fallback": {
+    "eye_gap": 84,
+    "eye_y": 127,
+    "eye_width": 62,
+    "eye_height": 26,
+    "iris_scale": 0.92,
+    "pupil_scale": 0.84,
+    "glow_bias": 0.86,
+    "motion": "lean_left",
+    "brow": "sad",
+    "mouth": "frown",
+    "palette": {
+      "accent": "#7BCBFF",
+      "primary": "#F1F8FF",
+      "shadow": "#102439",
+      "highlight": "#FFFFFF",
+      "secondary": "#B3DBFF",
+      "warning": "#FF7B7B"
+    }
+  }
 }
