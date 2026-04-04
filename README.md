@@ -91,6 +91,62 @@ Flic now treats the SD card as the primary runtime storage for user-modifiable a
 
 The firmware creates these directories at mount time and keeps legacy `/ai/*` directories for backward compatibility.
 
+## SD Asset Pipeline
+
+The Flic firmware includes a complete, deterministic asset pipeline for animation and face PNGs.
+
+### Importing assets from old SD card (Drive D:)
+- Run `python scripts/import_from_old_sd.py` to copy all boot and face PNGs from `D:/Flic/boot/` and `D:/Flic/animations/face/default/` into the repo under `firmware/assets/boot/` and `firmware/assets/faces/default/`.
+- Filenames are preserved and existing files are overwritten.
+
+### Storing assets in the repo
+- All animation and face PNGs are stored permanently in `firmware/assets/boot/` and `firmware/assets/faces/default/`.
+- These assets are version-controlled and always available for deployment.
+
+### Uploading assets to CoreS3 SD via COM9
+- Use the VS Code task **Upload Animations to CoreS3 SD** or run `python scripts/upload_assets_to_cores3.py`.
+- The uploader connects to the device over COM9 at 115200 baud and uploads all PNGs in 4096-byte chunks.
+- Each file is sent with CRC32 verification and always overwrites the target on the SD card.
+- Directories are auto-created as needed.
+- Progress is shown for each file and a summary is printed at the end.
+
+### Chunked uploader protocol
+- The firmware implements a serial command handler that accepts `BEGIN_UPLOAD`, `PATH`, `SIZE`, `CRC`, `CHUNK`, and `END_UPLOAD` commands.
+- Files are transferred in binary chunks with CRC32 verification.
+- The device responds with `OK` or `ERR` messages for each step.
+
+
+## Face Animation Pipeline (Base Face from Boot Frame 075)
+
+This system provides a fully deterministic, hands-off pipeline for generating and deploying face animations, using the final boot animation frame as the canonical base face.
+
+### Boot animation import logic
+- If `firmware/assets/boot/` is empty, run `python scripts/import_from_old_sd.py` to import all PNGs from `D:/Flic/boot/`.
+- Filenames are preserved and existing files are overwritten.
+
+### Base face extraction from frame_075.png
+- The canonical base face is extracted from `firmware/assets/boot/frame_075.png` and copied to `firmware/assets/base_face/base.png`.
+- This image is used as the reference for all face animation generation.
+
+### ComfyUI face animation generation
+- The script `scripts/generate_face_animations.py` loads `base_face/base.png` and all JSON animation definitions in `firmware/assets/faces/default/`.
+- For each animation, if the PNG frames are missing, ComfyUI is invoked to generate the frames using the base face as reference and the animation JSON for emotion-specific geometry.
+- The ComfyUI prompt is defined in `comfyui/face_animation_prompt.txt` and enforces strict style, color, and geometry consistency.
+
+### Regenerating animations
+- To regenerate all missing face animations, run the VS Code task **Upload All Face Animations to CoreS3 SD** or execute `python scripts/generate_face_animations.py`.
+- The system only generates frames for animations that do not already exist.
+
+### Uploading to CoreS3 SD card
+- The VS Code task **Upload All Face Animations to CoreS3 SD** runs both the animation generator and the serial SD uploader.
+- All assets are uploaded to the device SD card over COM9, with chunked transfer, CRC verification, and auto-created directories.
+- The process is fully automated and always overwrites existing files for consistency.
+
+### Deterministic, hands-off workflow
+- All steps are automated and reproducible from the repo.
+- The pipeline ensures that the device SD card always matches the repo asset vault and generated animations.
+- No manual intervention is required after initial setup.
+
 ## Build
 Open the workspace in PlatformIO and use the `m5cores3` environment from `platformio.ini`.
 

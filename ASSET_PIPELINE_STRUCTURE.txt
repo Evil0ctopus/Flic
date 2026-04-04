@@ -1,0 +1,25 @@
+firmware/assets/
+    boot/
+        frame_000.png
+        frame_001.png
+        ...
+        frame_075.png
+    base_face/
+        base.png
+    faces/
+        default/
+            <animation_name>/
+                frame_000.png
+                frame_001.png
+                ...
+comfyui/
+    face_animation_prompt.txt
+scripts/
+    import_from_old_sd.py
+    import_boot_if_needed.py
+    extract_base_face.py
+    generate_face_animations.py
+    upload_assets_to_cores3.py
+.vscode/
+    tasks.json
+README.md

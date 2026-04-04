@@ -14,6 +14,8 @@ constexpr const char* kSoundPath = "/Flic/sounds/";
 void logSdStatus() {
     const bool mounted = SdManager::isMounted();
     Serial.printf("[SD] mounted=%s\n", mounted ? "true" : "false");
+    Serial.printf("[SD] backend=%s\n", SdManager::storageBackend());
+    Serial.printf("[SD] mount_point=%s\n", SdManager::mountPoint());
     Serial.printf("[SD] boot_path=%s\n", kBootPath);
     Serial.printf("[SD] face_path=%s\n", kFacePath);
     Serial.printf("[SD] sound_path=%s\n", kSoundPath);

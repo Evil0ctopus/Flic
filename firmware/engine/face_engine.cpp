@@ -14,6 +14,46 @@
 #include <esp_heap_caps.h>
 
 #include <algorithm>
+
+namespace Flic {
+// Verifies the presence and frame count of a required animation set, logs results
+bool FaceEngine::verifyAnimationSet(const char* animationName) const {
+    Serial.printf("Flic: Animation verify: %s...\n", animationName);
+    const AnimationDefinition* def = definitionFor(animationName);
+    if (!def) {
+        Serial.printf("Flic: Animation verify: definition NOT FOUND: %s\n", animationName);
+        return false;
+    }
+    FrameSequence seq = resolveSequence(activeStyle_, animationName);
+    if (seq.frames.empty()) {
+        Serial.printf("Flic: Animation verify: frames MISSING: %s\n", animationName);
+        return false;
+    }
+    Serial.printf("Flic: Animation verify: %s: %u frames (expected %u)\n", animationName, (unsigned)seq.frames.size(), (unsigned)def->expectedFrames);
+    if (seq.frames.size() < def->expectedFrames) {
+        Serial.printf("Flic: Animation verify: WARNING: %s has fewer frames than expected!\n", animationName);
+        return false;
+    }
+    Serial.printf("Flic: Animation verify: OK: %s\n", animationName);
+    return true;
+}
+} // namespace Flic
+#include "face_engine.h"
+
+#include "face_settings_manager.h"
+#include "../subsystems/sd_manager.h"
+
+#include "emotion_blend_engine.h"
+#include "micro_expression_engine.h"
+#include "personality_state_machine.h"
+
+#include <M5Unified.h>
+#include <SD.h>
+#include <Preferences.h>
+#include <ArduinoJson.h>
+#include <esp_heap_caps.h>
+
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <type_traits>
@@ -552,6 +592,7 @@ void FaceEngine::update(float deltaSeconds) {
 }
 
 bool FaceEngine::loadAnimationSet(const String& styleName) {
+    Serial.printf("Flic: loadAnimationSet: %s\n", styleName.c_str());
     if (!scanIndex() && !SdManager::isMounted()) {
         SdManager::mount();
     }
@@ -562,6 +603,7 @@ bool FaceEngine::loadAnimationSet(const String& styleName) {
 }
 
 bool FaceEngine::loadAnimation(const String& animationName) {
+    Serial.printf("Flic: loadAnimation: %s\n", animationName.c_str());
     const String normalized = normalizeName(animationName);
     if (normalized.length() == 0) {
         return false;
@@ -575,10 +617,12 @@ bool FaceEngine::loadAnimation(const String& animationName) {
 }
 
 bool FaceEngine::playAnimation(const String& animationName) {
+    Serial.printf("Flic: playAnimation: %s\n", animationName.c_str());
     return play(animationName);
 }
 
 bool FaceEngine::setStyle(const String& styleName) {
+    Serial.printf("Flic: setStyle: %s\n", styleName.c_str());
     const String normalized = normalizeName(styleName);
     for (const String& style : styles_) {
         if (style == normalized) {

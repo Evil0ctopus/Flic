@@ -153,6 +153,9 @@ public:
     bool canCreateStyle() const;
     String customAnimationRoot(const String& animationName) const;
 
+    // Verifies the presence and frame count of a required animation set, logs results
+    bool verifyAnimationSet(const char* animationName) const;
+
 private:
     struct EmotionAnimationOverride {
         String emotion;

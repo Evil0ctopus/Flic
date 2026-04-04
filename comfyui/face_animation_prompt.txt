@@ -1,0 +1,32 @@
+# ComfyUI Face Animation Generation Prompt
+
+[INSTRUCTIONS]
+- Load the image: firmware/assets/base_face/base.png
+- Maintain the exact style, glow, color palette, and geometry of the base face
+- For each animation: <ANIMATION_NAME>
+    - Apply only the emotion-specific changes (eyes, mouth, tilt, etc.)
+    - Do NOT alter the overall style, color, or proportions
+    - Output a sequence of clean PNG frames named frame_<FRAME_INDEX>.png
+- Each frame must:
+    - Match the base face's lighting, color, and linework
+    - Only change the facial expression or pose as described in the animation JSON
+- Style Guide:
+    - Consistent soft glow, smooth gradients, and vibrant but not oversaturated colors
+    - No artifacts, no background, transparent PNG
+    - Geometry and proportions must match base.png exactly
+
+[VARIABLES]
+- <ANIMATION_NAME>: Name of the animation (e.g., blink, happy, surprised)
+- <FRAME_INDEX>: Zero-padded frame number (e.g., 000, 001, ...)
+
+[OUTPUT]
+- Output PNG frames to: firmware/assets/faces/default/<ANIMATION_NAME>/frame_<FRAME_INDEX>.png
+- Each animation must have a complete set of frames as defined in its JSON
+
+[EXAMPLE]
+- For animation "happy":
+    - Load base_face/base.png
+    - Apply happy expression (smile, eyes, etc.)
+    - Output: firmware/assets/faces/default/happy/frame_000.png, frame_001.png, ...
+
+[END]

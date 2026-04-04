@@ -14,6 +14,21 @@
 			"problemMatcher": []
 		},
 		{
+			"label": "Upload All Face Animations to CoreS3 SD",
+			"type": "shell",
+			"command": "python",
+			"args": [
+				"-c",
+				"import subprocess; subprocess.run(['python', 'scripts/generate_face_animations.py'], check=True); subprocess.run(['python', 'scripts/upload_assets_to_cores3.py'], check=True)"
+			],
+			"group": "build",
+			"presentation": {
+				"reveal": "always",
+				"panel": "shared"
+			},
+			"problemMatcher": []
+		},
+		{
 			"label": "PlatformIO: Upload",
 			"type": "shell",
 			"command": "python",
@@ -787,7 +802,7 @@
 			"group": "build"
 		},
 		{
-			"label": "Purge Old Faces \u2192 Install Unified Faces \u2192 Verify Runtime Load (Preserve Boot Animation)",
+			"label": "Purge Old Faces → Install Unified Faces → Verify Runtime Load (Preserve Boot Animation)",
 			"type": "shell",
 			"command": "python",
 			"args": [
@@ -899,6 +914,116 @@
 				"showReuseMessage": false,
 				"clear": true
 			}
+		},
+		{
+			"label": "PlatformIO: Build and Upload",
+			"type": "shell",
+			"command": "platformio",
+			"args": [
+				"run",
+				"--target",
+				"upload"
+			],
+			"group": "build"
+		},
+		{
+			"label": "PlatformIO: Build",
+			"type": "shell",
+			"command": "platformio",
+			"args": [
+				"run"
+			],
+			"group": "build"
+		},
+		{
+			"label": "PlatformIO: Upload",
+			"type": "shell",
+			"command": "platformio",
+			"args": [
+				"run",
+				"--target",
+				"upload"
+			],
+			"group": "build"
+		},
+		{
+			"label": "PlatformIO: Build",
+			"type": "shell",
+			"command": "platformio",
+			"args": [
+				"run"
+			],
+			"group": "build"
+		},
+		{
+			"label": "PlatformIO: Upload",
+			"type": "shell",
+			"command": "platformio",
+			"args": [
+				"run",
+				"--target",
+				"upload"
+			],
+			"group": "build"
+		},
+		{
+			"label": "PlatformIO: Monitor",
+			"type": "shell",
+			"command": "platformio",
+			"args": [
+				"device",
+				"monitor"
+			],
+			"group": "build"
+		},
+		{
+			"label": "PlatformIO: Build",
+			"type": "shell",
+			"command": "platformio",
+			"args": [
+				"run"
+			],
+			"group": "build"
+		},
+		{
+			"label": "PlatformIO: Upload",
+			"type": "shell",
+			"command": "platformio",
+			"args": [
+				"run",
+				"--target",
+				"upload"
+			],
+			"group": "build"
+		},
+		{
+			"label": "PlatformIO: Monitor",
+			"type": "shell",
+			"command": "platformio",
+			"args": [
+				"device",
+				"monitor"
+			],
+			"group": "build"
+		},
+		{
+			"label": "Upload Animations to CoreS3 SD",
+			"type": "shell",
+			"command": "${config:python.pythonPath}",
+			"args": [
+				"scripts/upload_assets_to_cores3.py"
+			],
+			"group": {
+				"kind": "build",
+				"isDefault": false
+			},
+			"presentation": {
+				"echo": true,
+				"reveal": "always",
+				"focus": false,
+				"panel": "shared"
+			},
+			"problemMatcher": []
 		}
 	]
 }

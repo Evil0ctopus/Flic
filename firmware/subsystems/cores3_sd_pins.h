@@ -5,15 +5,15 @@
 namespace Flic {
 namespace CoreS3SdPins {
 
-// M5Stack CoreS3 TF-card SPI pins per official CoreS3 hardware docs/pin map.
-// TF CS   -> GPIO4
-// TF MOSI -> GPIO35
-// TF MISO -> GPIO37
-// TF SCK  -> GPIO36
-constexpr int kCs = 4;
-constexpr int kMosi = 35;
-constexpr int kMiso = 37;
-constexpr int kSck = 36;
+// M5Stack CoreS3 TF-card SPI pins per official CoreS3 docs.
+// SCK  -> GPIO39
+// MOSI -> GPIO38
+// MISO -> GPIO40
+// CS   -> GPIO41
+constexpr int kSpiSck = 39;
+constexpr int kSpiMosi = 38;
+constexpr int kSpiMiso = 40;
+constexpr int kSpiCs = 41;
 
 }  // namespace CoreS3SdPins
 }  // namespace Flic

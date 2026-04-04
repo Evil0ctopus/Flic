@@ -1,0 +1,9 @@
+{
+    "name": "blink",
+    "description": "A simple blink animation.",
+    "frames": 2,
+    "geometry": [
+        {"eyes": "open"},
+        {"eyes": "closed"}
+    ]
+}

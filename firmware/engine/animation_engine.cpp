@@ -106,12 +106,13 @@ bool loadAnimationDocument(const String& path, Animation& animation) {
         fileName = fileName.substring(slash + 1);
     }
 
-    Serial.println(String("Loading face JSON: ") + fileName);
-    Serial.println(String("Resolved path: ") + path);
+    Serial.println(String("[ANIM] Loading face JSON: ") + fileName);
+    Serial.println(String("[ANIM] Resolved path: ") + path);
     SdDiagnostics::logFaceLoad(fileName, path);
 
     File file = SD.open(path);
     if (!file) {
+        Serial.println(String("[ANIM] ERROR: File open failed: ") + path);
         return false;
     }
 
@@ -119,37 +120,38 @@ bool loadAnimationDocument(const String& path, Animation& animation) {
     const DeserializationError error = deserializeJson(document, file);
     file.close();
     if (error) {
-        Serial.printf("Flic: invalid animation JSON (%s): %s\n", path.c_str(), error.c_str());
+        Serial.printf("[ANIM] ERROR: Invalid animation JSON (%s): %s\n", path.c_str(), error.c_str());
         return false;
     }
 
     animation.name = document["name"] | "";
     animation.fps = document["fps"] | 0;
     if (animation.name.isEmpty() || animation.fps < kMinimumFps || animation.fps > kMaximumFps) {
-        Serial.printf("Flic: animation rejected (%s): invalid header\n", path.c_str());
+        Serial.printf("[ANIM] ERROR: Animation rejected (%s): invalid header\n", path.c_str());
         return false;
     }
 
     JsonArray frames = document["frames"].as<JsonArray>();
     if (frames.isNull() || frames.size() == 0) {
-        Serial.printf("Flic: animation rejected (%s): no frames\n", path.c_str());
+        Serial.printf("[ANIM] ERROR: Animation rejected (%s): no frames\n", path.c_str());
         return false;
     }
 
     animation.frames.clear();
     uint32_t invalidColorCount = 0;
 
+    size_t frameIdx = 0;
     for (JsonObject frameObject : frames) {
         Frame frame;
         frame.durationMs = frameObject["duration"] | 0;
         if (frame.durationMs == 0) {
-            Serial.printf("Flic: animation rejected (%s): frame duration invalid\n", path.c_str());
+            Serial.printf("[ANIM] ERROR: Animation rejected (%s): frame %u duration invalid\n", path.c_str(), (unsigned)frameIdx);
             return false;
         }
 
         JsonArray pixels = frameObject["pixels"].as<JsonArray>();
         if (pixels.isNull()) {
-            Serial.printf("Flic: animation rejected (%s): frame pixels missing\n", path.c_str());
+            Serial.printf("[ANIM] ERROR: Animation rejected (%s): frame %u pixels missing\n", path.c_str(), (unsigned)frameIdx);
             return false;
         }
 
@@ -214,14 +216,16 @@ bool loadAnimationDocument(const String& path, Animation& animation) {
         }
 
         animation.frames.push_back(frame);
+        ++frameIdx;
     }
 
     if (invalidColorCount > 0) {
-        Serial.printf("Flic: animation warning (%s): substituted %lu invalid color token(s)\n",
+        Serial.printf("[ANIM] WARNING: Animation (%s): substituted %lu invalid color token(s)\n",
                       path.c_str(),
                       static_cast<unsigned long>(invalidColorCount));
     }
 
+    Serial.printf("[ANIM] Animation loaded: %s | Frames: %u | FPS: %u\n", path.c_str(), (unsigned)animation.frames.size(), (unsigned)animation.fps);
     return !animation.frames.empty();
 }
 
@@ -287,12 +291,16 @@ bool AnimationEngine::begin() {
     }
 
     if (!SdManager::isMounted()) {
-        Serial.println("Flic: SD not mounted, skipping face JSON load.");
+        Serial.println("[ANIM] SD not mounted, skipping face JSON load.");
         return false;
     }
 
-    Serial.println("SD mounted, loading faces from: /Flic/animations/face/default/");
-    return SD.exists(kAnimationRoot);
+    Serial.println("[ANIM] SD mounted, loading faces from: /Flic/animations/face/default/");
+    bool exists = SD.exists(kAnimationRoot);
+    if (!exists) {
+        Serial.println("[ANIM] ERROR: Animation root directory missing: /Flic/animations/face/default/");
+    }
+    return exists;
 }
 
 float AnimationEngine::playbackSpeed() const {
@@ -310,11 +318,13 @@ void AnimationEngine::setPlaybackSpeed(float speed) {
 
 bool AnimationEngine::hasRealAnimations() const {
     if (!SdManager::isMounted()) {
+        Serial.println("[ANIM] hasRealAnimations: SD not mounted");
         return false;
     }
 
     File root = SD.open(kAnimationRoot);
     if (!root || !root.isDirectory()) {
+        Serial.println("[ANIM] hasRealAnimations: Animation root missing");
         return false;
     }
 
@@ -323,12 +333,14 @@ bool AnimationEngine::hasRealAnimations() const {
         if (!entry.isDirectory()) {
             const String fileName = entry.name();
             if (fileName.endsWith(".json") && !fileName.endsWith("placeholder.json")) {
+                Serial.printf("[ANIM] Found animation: %s\n", fileName.c_str());
                 return true;
             }
         }
         entry = root.openNextFile();
     }
 
+    Serial.println("[ANIM] No real animations found");
     return false;
 }
 
@@ -481,13 +493,13 @@ bool AnimationEngine::generateFirstAnimationIfNeeded() {
 
 bool AnimationEngine::loadFirstAnimationFromDisk(String& filePath) {
     if (!SdManager::isMounted()) {
-        Serial.println("Flic: SD not mounted, skipping face JSON load.");
+        Serial.println("[ANIM] SD not mounted, skipping face JSON load.");
         return false;
     }
 
     File root = SD.open(kAnimationRoot);
     if (!root || !root.isDirectory()) {
-        Serial.println("Flic: animation directory missing.");
+        Serial.println("[ANIM] ERROR: Animation directory missing.");
         return false;
     }
 
@@ -497,12 +509,14 @@ bool AnimationEngine::loadFirstAnimationFromDisk(String& filePath) {
             String candidate = entry.name();
             if (candidate.endsWith(".json") && !candidate.endsWith("placeholder.json")) {
                 filePath = String(kAnimationRoot) + "/" + candidate;
+                Serial.printf("[ANIM] Found first animation: %s\n", filePath.c_str());
                 return true;
             }
         }
         entry = root.openNextFile();
     }
 
+    Serial.println("[ANIM] No valid animation found in directory.");
     return false;
 }
 

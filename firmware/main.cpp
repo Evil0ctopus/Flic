@@ -1643,7 +1643,8 @@ void initializeStorage() {
     Flic::SdManager::configureBus();
     Flic::SdManager::mount();
     Flic::SdDiagnostics::logSdStatus();
-    if (!Flic::g_sdMounted) {
+    Flic::SdManager::verify();
+    if (!Flic::SdManager::isMounted()) {
         gUseSdFallbackFace = true;
         Serial.println("Flic: NO-SD mode active - using built-in faces and boot indicator.");
         Serial.println("Flic: continuing without SD-backed animations.");
@@ -1687,6 +1688,15 @@ void initializeCoreEngines() {
     if (!hadRealAnimations && !hasFaceIdle) {
         animationEngine.generateFirstAnimationIfNeeded();
     }
+
+    // Animation verification for required sets
+    Serial.println("Flic: Verifying required face animations...");
+    faceEngine.verifyAnimationSet("idle_breathing");
+    faceEngine.verifyAnimationSet("emotion_calm");
+    faceEngine.verifyAnimationSet("emotion_curious");
+    faceEngine.verifyAnimationSet("emotion_happy");
+    faceEngine.verifyAnimationSet("emotion_sleepy");
+    faceEngine.verifyAnimationSet("emotion_surprised");
 
     proposalSystem.begin(&memoryManager, &emotionEngine);
     personalityUi.begin(&emotionEngine, &lightEngine, &faceEngine);
@@ -2211,26 +2221,36 @@ void setup() {
         return;
     }
 
+    Serial.println("\n========== Flic Boot: BEGIN ==========");
     initializeCoreS3();
     bootStartMs = millis();
 
+    Serial.println("[BOOT] Mounting SD card...");
     initializeStorage();
+    Flic::SdManager::printBootSummary();
+    Serial.println("[BOOT] SD mount and verification complete.");
+
     initializeLightingAndBoot();
     if (gUseSdFallbackFace) {
-        Serial.println("Flic: SD fallback face enabled.");
+        Serial.println("[BOOT] SD fallback face enabled.");
         renderBuiltInFallbackFace();
         gLastFallbackFaceDrawMs = millis();
     }
+
+    Serial.println("[BOOT] Initializing core engines...");
     initializeCoreEngines();
     initializeInteractionEngines();
     loadRuntimeSettings();
     applyRuntimeSettings();
     runBootExpressionDemoIfEnabled();
+
     if (!kSafeBootMode) {
+        Serial.println("[BOOT] Connecting to WiFi and starting runtime services...");
         initializeWiFi();
         initializeRuntimeServices();
         const bool hasFaceIdle = faceEngine.loadAnimation("idle");
         if (!hasFaceIdle && !gUseSdFallbackFace) {
+            Serial.println("[BOOT] No idle face animation found, running first animation sequence...");
             runFirstAnimationSequence();
             delay(900);
         }
@@ -2240,6 +2260,9 @@ void setup() {
         }
     }
     showEmergencyScreenIfEnabled();
+
+    Serial.println("========== Flic Boot: END ==========");
+    Serial.println("[BOOT] System initialization complete.\n");
 }
 
 void loop() {
