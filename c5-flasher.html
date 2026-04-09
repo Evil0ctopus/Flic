@@ -1,0 +1,880 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>ESP32‑C5 Cyberpunk Web Flasher</title>
+	<style>
+		/* CYBERPUNK PIXEL-ART THEME */
+		:root {
+			--bg-main: #10101a;
+			--bg-panel: #181828;
+			--bg-nav: #0a0a14;
+			--neon-cyan: #4cc9f0;
+			--neon-blue: #4895ef;
+			--neon-violet: #7209b7;
+			--neon-pink: #f72585;
+			--pixel-border: 1.5px solid #4cc9f0;
+			--pixel-shadow: 0 0 8px #4cc9f0, 0 0 2px #4cc9f0;
+			--pixel-font: 'Press Start 2P', 'VT323', 'Consolas', monospace;
+			--scanline: repeating-linear-gradient(
+				to bottom,
+				rgba(76,201,240,0.04) 0px,
+				rgba(76,201,240,0.04) 1.5px,
+				transparent 1.5px,
+				transparent 3px
+			);
+		}
+
+		@font-face {
+			font-family: 'Press Start 2P';
+			src: local('Press Start 2P'), url(data:font/woff;base64,d09GRgABAAAAAAp4ABAAAAAA...AA==) format('woff');
+			font-display: swap;
+		}
+
+		html, body {
+			height: 100%;
+			margin: 0;
+			padding: 0;
+			background: var(--bg-main);
+			color: var(--neon-cyan);
+			font-family: var(--pixel-font);
+			letter-spacing: 0.5px;
+			min-width: 900px;
+			min-height: 600px;
+			overflow: hidden;
+		}
+
+		body::before {
+			content: "";
+			position: fixed;
+			z-index: 0;
+			top: 0; left: 0; right: 0; bottom: 0;
+			pointer-events: none;
+			background: var(--scanline);
+			mix-blend-mode: lighten;
+			opacity: 0.7;
+		}
+
+		.crt-glow {
+			filter: drop-shadow(0 0 8px var(--neon-cyan)) drop-shadow(0 0 2px var(--neon-blue));
+		}
+
+		.hud {
+			display: flex;
+			height: 100vh;
+			width: 100vw;
+			position: relative;
+			z-index: 1;
+		}
+
+		/* NAVIGATION */
+		.nav {
+			width: 90px;
+			background: var(--bg-nav);
+			border-right: var(--pixel-border);
+			display: flex;
+			flex-direction: column;
+			align-items: center;
+			padding-top: 32px;
+			gap: 18px;
+			box-shadow: 2px 0 12px #4cc9f055;
+			position: relative;
+			z-index: 2;
+		}
+		.nav-btn {
+			width: 56px;
+			height: 56px;
+			background: var(--bg-panel);
+			border: var(--pixel-border);
+			margin-bottom: 8px;
+			border-radius: 8px;
+			box-shadow: var(--pixel-shadow);
+			display: flex;
+			flex-direction: column;
+			align-items: center;
+			justify-content: center;
+			cursor: pointer;
+			transition: background 0.2s, box-shadow 0.2s;
+			position: relative;
+			outline: none;
+		}
+		.nav-btn.selected, .nav-btn:focus {
+			background: var(--neon-cyan);
+			color: #10101a;
+			box-shadow: 0 0 16px #4cc9f0, 0 0 2px #4cc9f0;
+		}
+		.nav-btn .icon {
+			width: 28px;
+			height: 28px;
+			margin-bottom: 4px;
+			display: block;
+		}
+		.nav-btn .label {
+			font-size: 9px;
+			text-align: center;
+			text-shadow: 0 0 2px #4cc9f0;
+			letter-spacing: 0.5px;
+			user-select: none;
+		}
+
+		/* MAIN PANEL */
+		.main {
+			flex: 1;
+			display: flex;
+			flex-direction: column;
+			background: var(--bg-panel);
+			border-left: none;
+			border-radius: 0 0 0 0;
+			position: relative;
+			z-index: 1;
+			overflow: hidden;
+			box-shadow: 0 0 32px #4cc9f033 inset;
+		}
+
+		/* STATUS BAR */
+		.status-bar {
+			height: 38px;
+			background: linear-gradient(90deg, #181828 80%, #4cc9f0 100%);
+			border-bottom: var(--pixel-border);
+			display: flex;
+			align-items: center;
+			padding: 0 24px;
+			font-size: 13px;
+			letter-spacing: 1px;
+			box-shadow: 0 2px 12px #4cc9f033;
+			position: relative;
+			z-index: 2;
+		}
+		.status-chip {
+			display: inline-block;
+			min-width: 90px;
+			padding: 3px 12px;
+			margin-right: 18px;
+			border-radius: 6px;
+			background: #181828;
+			border: 1px solid #4cc9f0;
+			box-shadow: 0 0 8px #4cc9f0bb inset;
+			font-size: 12px;
+			text-align: center;
+			color: var(--neon-cyan);
+			font-family: var(--pixel-font);
+			text-shadow: 0 0 2px #4cc9f0;
+		}
+		.status-chip.connected {
+			background: #4cc9f0;
+			color: #10101a;
+			box-shadow: 0 0 16px #4cc9f0, 0 0 2px #4cc9f0;
+			border-color: #4cc9f0;
+		}
+		.status-chip.chip-ok {
+			background: #4895ef;
+			color: #fff;
+			border-color: #4895ef;
+			box-shadow: 0 0 12px #4895ef, 0 0 2px #4895ef;
+		}
+		.status-chip.chip-fail {
+			background: #f72585;
+			color: #fff;
+			border-color: #f72585;
+			box-shadow: 0 0 12px #f72585, 0 0 2px #f72585;
+		}
+		.status-bar .spacer {
+			flex: 1;
+		}
+
+		/* BOTTOM BAR */
+		.bottom-bar {
+			height: 28px;
+			background: #0a0a14;
+			border-top: var(--pixel-border);
+			box-shadow: 0 -2px 12px #4cc9f033;
+			display: flex;
+			align-items: center;
+			padding: 0 18px;
+			font-size: 11px;
+			letter-spacing: 1px;
+			position: relative;
+			z-index: 2;
+			overflow: hidden;
+		}
+		.scanline-anim {
+			position: absolute;
+			left: 0; right: 0; top: 0; bottom: 0;
+			pointer-events: none;
+			background: repeating-linear-gradient(
+				to bottom,
+				rgba(76,201,240,0.08) 0px,
+				rgba(76,201,240,0.08) 1.5px,
+				transparent 1.5px,
+				transparent 3px
+			);
+			animation: scanlines 2.5s linear infinite;
+			opacity: 0.7;
+			z-index: 1;
+		}
+		@keyframes scanlines {
+			0% { background-position-y: 0; }
+			100% { background-position-y: 6px; }
+		}
+
+		/* MAIN PANELS */
+		.panel {
+			flex: 1;
+			padding: 32px 36px 24px 36px;
+			overflow-y: auto;
+			position: relative;
+			z-index: 1;
+			color: var(--neon-cyan);
+			font-family: var(--pixel-font);
+			font-size: 15px;
+			background: var(--bg-panel);
+			border-radius: 12px;
+			box-shadow: 0 0 24px #4cc9f055 inset;
+			margin: 24px 32px 24px 0;
+			border: var(--pixel-border);
+			min-height: 420px;
+			max-width: 900px;
+		}
+
+		/* FLASH PANEL */
+		.flash-form {
+			display: flex;
+			flex-direction: column;
+			gap: 18px;
+			max-width: 420px;
+		}
+		.flash-form label {
+			font-size: 13px;
+			color: #4cc9f0;
+			margin-bottom: 4px;
+			text-shadow: 0 0 2px #4cc9f0;
+		}
+		.flash-form input[type="file"] {
+			background: #181828;
+			color: #4cc9f0;
+			border: var(--pixel-border);
+			border-radius: 4px;
+			padding: 6px 8px;
+			font-family: var(--pixel-font);
+			font-size: 13px;
+			outline: none;
+			box-shadow: 0 0 8px #4cc9f0bb inset;
+		}
+		.flash-form input[type="number"],
+		.flash-form input[type="text"] {
+			background: #181828;
+			color: #4cc9f0;
+			border: var(--pixel-border);
+			border-radius: 4px;
+			padding: 6px 8px;
+			font-family: var(--pixel-font);
+			font-size: 13px;
+			outline: none;
+			box-shadow: 0 0 8px #4cc9f0bb inset;
+			width: 120px;
+		}
+		.flash-form select {
+			background: #181828;
+			color: #4cc9f0;
+			border: var(--pixel-border);
+			border-radius: 4px;
+			padding: 6px 8px;
+			font-family: var(--pixel-font);
+			font-size: 13px;
+			outline: none;
+			box-shadow: 0 0 8px #4cc9f0bb inset;
+			width: 140px;
+		}
+		.flash-form .toggle {
+			display: flex;
+			align-items: center;
+			gap: 8px;
+			margin-top: 4px;
+		}
+		.flash-form .toggle input[type="checkbox"] {
+			accent-color: #4cc9f0;
+			width: 18px;
+			height: 18px;
+			margin: 0;
+		}
+		.flash-form .btn {
+			margin-top: 18px;
+			padding: 10px 0;
+			width: 100%;
+			background: #4cc9f0;
+			color: #10101a;
+			border: var(--pixel-border);
+			border-radius: 6px;
+			font-family: var(--pixel-font);
+			font-size: 15px;
+			font-weight: bold;
+			box-shadow: 0 0 16px #4cc9f0, 0 0 2px #4cc9f0;
+			cursor: pointer;
+			transition: background 0.2s, color 0.2s;
+			outline: none;
+		}
+		.flash-form .btn:active {
+			background: #4895ef;
+			color: #fff;
+		}
+
+		/* PROGRESS BAR */
+		.progress-bar {
+			width: 100%;
+			height: 18px;
+			background: #181828;
+			border: var(--pixel-border);
+			border-radius: 6px;
+			box-shadow: 0 0 12px #4cc9f0bb inset;
+			margin-top: 12px;
+			overflow: hidden;
+			position: relative;
+		}
+		.progress {
+			height: 100%;
+			background: linear-gradient(90deg, #4cc9f0 60%, #4895ef 100%);
+			box-shadow: 0 0 16px #4cc9f0, 0 0 2px #4cc9f0;
+			border-radius: 6px 0 0 6px;
+			transition: width 0.2s;
+		}
+
+		/* SERIAL MONITOR */
+		.serial-log {
+			background: #10101a;
+			border: var(--pixel-border);
+			border-radius: 8px;
+			box-shadow: 0 0 12px #4cc9f0bb inset;
+			padding: 18px 12px 18px 18px;
+			font-family: var(--pixel-font);
+			font-size: 13px;
+			color: #4cc9f0;
+			height: 320px;
+			overflow-y: auto;
+			white-space: pre-wrap;
+			margin-bottom: 12px;
+			position: relative;
+		}
+		.serial-log .log-line {
+			display: block;
+			margin-bottom: 2px;
+			font-family: var(--pixel-font);
+			font-size: 13px;
+			white-space: pre-wrap;
+		}
+		.serial-log .log-info { color: #4cc9f0; }
+		.serial-log .log-warn { color: #f7b801; }
+		.serial-log .log-error { color: #f72585; }
+		.serial-log .log-debug { color: #4895ef; }
+		.serial-log .log-ok { color: #43ff64; }
+		.serial-log .log-raw { color: #fff; }
+		.serial-log .log-cursor {
+			display: inline-block;
+			width: 10px;
+			background: #4cc9f0;
+			animation: blink-cursor 1s steps(2, start) infinite;
+			margin-left: 2px;
+			height: 1.1em;
+			vertical-align: middle;
+		}
+		@keyframes blink-cursor {
+			0%, 49% { opacity: 1; }
+			50%, 100% { opacity: 0; }
+		}
+
+		/* SETTINGS PANEL */
+		.settings-form {
+			display: flex;
+			flex-direction: column;
+			gap: 18px;
+			max-width: 420px;
+		}
+		.settings-form label {
+			font-size: 13px;
+			color: #4cc9f0;
+			margin-bottom: 4px;
+			text-shadow: 0 0 2px #4cc9f0;
+		}
+		.settings-form input[type="number"],
+		.settings-form input[type="text"] {
+			background: #181828;
+			color: #4cc9f0;
+			border: var(--pixel-border);
+			border-radius: 4px;
+			padding: 6px 8px;
+			font-family: var(--pixel-font);
+			font-size: 13px;
+			outline: none;
+			box-shadow: 0 0 8px #4cc9f0bb inset;
+			width: 120px;
+		}
+		.settings-form .btn {
+			margin-top: 18px;
+			padding: 10px 0;
+			width: 100%;
+			background: #4cc9f0;
+			color: #10101a;
+			border: var(--pixel-border);
+			border-radius: 6px;
+			font-family: var(--pixel-font);
+			font-size: 15px;
+			font-weight: bold;
+			box-shadow: 0 0 16px #4cc9f0, 0 0 2px #4cc9f0;
+			cursor: pointer;
+			transition: background 0.2s, color 0.2s;
+			outline: none;
+		}
+		.settings-form .btn:active {
+			background: #4895ef;
+			color: #fff;
+		}
+
+		/* PIXEL ART ACCENTS */
+		.octobuddy {
+			position: absolute;
+			left: 0; bottom: 0;
+			width: 120px;
+			height: 120px;
+			pointer-events: none;
+			opacity: 0.18;
+			z-index: 0;
+		}
+		.octo-circuit {
+			position: absolute;
+			right: 0; top: 0;
+			width: 120px;
+			height: 120px;
+			pointer-events: none;
+			opacity: 0.13;
+			z-index: 0;
+		}
+		/* Scrollbar styling */
+		::-webkit-scrollbar {
+			width: 8px;
+			background: #181828;
+		}
+		::-webkit-scrollbar-thumb {
+			background: #4cc9f0;
+			border-radius: 4px;
+			box-shadow: 0 0 8px #4cc9f0bb inset;
+		}
+	</style>
+</head>
+<body>
+	<div class="hud">
+		<!-- Left Navigation -->
+		<nav class="nav">
+			<button class="nav-btn selected" id="nav-flash" tabindex="1" title="Flash Firmware">
+				<span class="icon">🔌</span>
+				<span class="label">Flash</span>
+			</button>
+			<button class="nav-btn" id="nav-erase" tabindex="2" title="Erase Flash">
+				<span class="icon">🧹</span>
+				<span class="label">Erase</span>
+			</button>
+			<button class="nav-btn" id="nav-serial" tabindex="3" title="Serial Monitor">
+				<span class="icon">💬</span>
+				<span class="label">Serial</span>
+			</button>
+			<button class="nav-btn" id="nav-settings" tabindex="4" title="Settings">
+				<span class="icon">⚙️</span>
+				<span class="label">Settings</span>
+			</button>
+		</nav>
+
+		<!-- Main Content -->
+		<main class="main">
+			<!-- Status Bar -->
+			<div class="status-bar">
+				<span class="status-chip" id="status-conn">Disconnected</span>
+				   <span class="status-chip" id="status-chip">No Chip</span>
+				   <span class="status-chip" id="status-chip-details" style="min-width:180px;background:#181828;border:1px solid #4895ef;box-shadow:0 0 8px #4895ef77 inset;color:#4cc9f0;"></span>
+				<span class="status-chip" id="status-baud">921600</span>
+				<span class="spacer"></span>
+				<button id="btn-connect" class="nav-btn" style="width:38px;height:38px;padding:0 0 0 0;min-width:0;background:#181828;border-radius:6px;box-shadow:0 0 8px #4cc9f0bb inset;">
+					<span class="icon">🔗</span>
+				</button>
+			</div>
+
+			<!-- Panels -->
+			<section class="panel" id="panel-flash">
+				<h2 class="crt-glow">Flash Firmware</h2>
+				<form class="flash-form" id="flash-form">
+					<label for="binfile">Firmware .bin File</label>
+					<input type="file" id="binfile" accept=".bin" required>
+					<label for="offset">Flash Offset</label>
+					<input type="text" id="offset" value="0x0" pattern="^0x[0-9a-fA-F]+$" required>
+					<label for="baud">Baud Rate</label>
+					<select id="baud">
+						<option value="921600" selected>921600</option>
+						<option value="460800">460800</option>
+						<option value="115200">115200</option>
+					</select>
+					<div class="toggle">
+						<input type="checkbox" id="force-rev1">
+						<label for="force-rev1">Force-write for ESP32‑C5 rev 1.0</label>
+					</div>
+					<button type="submit" class="btn">Flash Firmware</button>
+				</form>
+				<div class="progress-bar" id="flash-progress" style="display:none;">
+					<div class="progress" id="progress-inner" style="width:0%"></div>
+				</div>
+				<div id="flash-status" style="margin-top:12px;font-size:13px;"></div>
+			</section>
+
+			<section class="panel" id="panel-erase" style="display:none;">
+				<h2 class="crt-glow">Erase Flash</h2>
+				<button class="btn" id="btn-erase">Erase Entire Flash</button>
+				<div id="erase-status" style="margin-top:18px;font-size:13px;"></div>
+			</section>
+
+			<section class="panel" id="panel-serial" style="display:none;">
+				<h2 class="crt-glow">Serial Monitor</h2>
+				<div class="serial-log" id="serial-log"></div>
+				<button class="btn" id="btn-clear-log">Clear Log</button>
+			</section>
+
+			<section class="panel" id="panel-settings" style="display:none;">
+				<h2 class="crt-glow">Settings</h2>
+				<form class="settings-form" id="settings-form">
+					<label for="settings-baud">Default Baud Rate</label>
+					<select id="settings-baud">
+						<option value="921600">921600</option>
+						<option value="460800">460800</option>
+						<option value="115200">115200</option>
+					</select>
+					<label for="settings-offset">Default Flash Offset</label>
+					<input type="text" id="settings-offset" value="0x0" pattern="^0x[0-9a-fA-F]+$">
+					<button type="submit" class="btn">Save Settings</button>
+				</form>
+				<div id="settings-status" style="margin-top:12px;font-size:13px;"></div>
+			</section>
+
+			<!-- Pixel Art Accents -->
+			<svg class="octobuddy" viewBox="0 0 120 120">
+				<polyline points="10,110 30,90 50,110 70,90 90,110" stroke="#4cc9f0" stroke-width="3" fill="none"/>
+				<ellipse cx="60" cy="60" rx="38" ry="38" stroke="#4cc9f0" stroke-width="3" fill="none"/>
+				<ellipse cx="60" cy="60" rx="18" ry="18" stroke="#4895ef" stroke-width="2" fill="none"/>
+				<ellipse cx="60" cy="60" rx="7" ry="7" stroke="#7209b7" stroke-width="2" fill="none"/>
+			</svg>
+			<svg class="octo-circuit" viewBox="0 0 120 120">
+				<polyline points="110,10 90,30 110,50 90,70 110,90" stroke="#7209b7" stroke-width="3" fill="none"/>
+				<polyline points="60,10 60,40 90,40" stroke="#4cc9f0" stroke-width="2" fill="none"/>
+				<polyline points="60,110 60,80 30,80" stroke="#4895ef" stroke-width="2" fill="none"/>
+			</svg>
+		</main>
+	</div>
+	<div class="bottom-bar">
+		<span style="z-index:2;">ESP32‑C5 Cyberpunk Web Flasher &copy; 2026</span>
+		<div class="scanline-anim"></div>
+	</div>
+	<script>
+		// --- UI State ---
+		const navBtns = [
+			document.getElementById('nav-flash'),
+			document.getElementById('nav-erase'),
+			document.getElementById('nav-serial'),
+			document.getElementById('nav-settings')
+		];
+		const panels = [
+			document.getElementById('panel-flash'),
+			document.getElementById('panel-erase'),
+			document.getElementById('panel-serial'),
+			document.getElementById('panel-settings')
+		];
+		navBtns.forEach((btn, idx) => {
+			btn.addEventListener('click', () => {
+				navBtns.forEach((b, i) => {
+					b.classList.toggle('selected', i === idx);
+					panels[i].style.display = i === idx ? '' : 'none';
+				});
+			});
+		});
+
+		// --- Settings Persistence ---
+		const settings = {
+			baud: localStorage.getItem('c5-baud') || '921600',
+			offset: localStorage.getItem('c5-offset') || '0x0',
+		};
+		document.getElementById('baud').value = settings.baud;
+		document.getElementById('offset').value = settings.offset;
+		document.getElementById('settings-baud').value = settings.baud;
+		document.getElementById('settings-offset').value = settings.offset;
+		document.getElementById('settings-form').onsubmit = e => {
+			e.preventDefault();
+			settings.baud = document.getElementById('settings-baud').value;
+			settings.offset = document.getElementById('settings-offset').value;
+			localStorage.setItem('c5-baud', settings.baud);
+			localStorage.setItem('c5-offset', settings.offset);
+			document.getElementById('baud').value = settings.baud;
+			document.getElementById('offset').value = settings.offset;
+			document.getElementById('settings-status').textContent = 'Settings saved!';
+			setTimeout(()=>document.getElementById('settings-status').textContent='', 1200);
+		};
+
+
+		// --- Status Bar ---
+		function setStatusConn(connected) {
+			const el = document.getElementById('status-conn');
+			el.textContent = connected ? 'Connected' : 'Disconnected';
+			el.className = 'status-chip' + (connected ? ' connected' : '');
+		}
+		function setStatusChip(chipInfo) {
+			const el = document.getElementById('status-chip');
+			const detailsEl = document.getElementById('status-chip-details');
+			if (chipInfo && chipInfo.family) {
+				el.textContent = chipInfo.family + (chipInfo.revision ? ` Rev ${chipInfo.revision}` : '');
+				el.className = 'status-chip chip-ok';
+				detailsEl.innerHTML =
+				  `<span style='color:#4cc9f0;'>${chipInfo.family}</span> ` +
+				  (chipInfo.revision ? `Rev <span style='color:#43ff64;'>${chipInfo.revision}</span> ` : '') +
+				  `<span style='color:#4895ef;'>Magic:</span> <span style='color:#fff;'>${chipInfo.magic}</span>` +
+				  (chipInfo.bootloader ? `<br><span style='color:#f7b801;'>${chipInfo.bootloader}</span>` : '');
+			} else if (chipInfo && chipInfo.unknown) {
+				el.textContent = 'Unknown ESP chip';
+				el.className = 'status-chip chip-fail';
+				detailsEl.innerHTML = `<span style='color:#f72585;'>Unknown ESP chip detected</span>` + (chipInfo.magic ? ` <span style='color:#fff;'>(${chipInfo.magic})</span>` : '');
+			} else {
+				el.textContent = 'No Chip';
+				el.className = 'status-chip chip-fail';
+				detailsEl.innerHTML = '';
+			}
+		}
+		function setStatusBaud(baud) {
+			const el = document.getElementById('status-baud');
+			el.textContent = baud;
+		}
+
+		// --- WebSerial Logic ---
+		let port = null;
+		let reader = null;
+		let writer = null;
+		let serialLog = [];
+		let serialLogEl = document.getElementById('serial-log');
+		let serialMonitorActive = false;
+		let chipDetected = false;
+		let chipRev = '';
+		let baudRate = parseInt(settings.baud);
+
+		async function connectSerial() {
+			try {
+				port = await navigator.serial.requestPort();
+				await port.open({ baudRate });
+				setStatusConn(true);
+				writer = port.writable.getWriter();
+				reader = port.readable.getReader();
+				listenSerial();
+				detectChip();
+			} catch (e) {
+				setStatusConn(false);
+				logSerial('error', 'Failed to connect: ' + e);
+			}
+		}
+
+		async function disconnectSerial() {
+			try {
+				if (reader) await reader.cancel();
+				if (writer) writer.releaseLock();
+				if (port) await port.close();
+			} catch {}
+			setStatusConn(false);
+			setStatusChip(false);
+			port = null;
+			reader = null;
+			writer = null;
+			chipDetected = false;
+			chipRev = '';
+		}
+
+		async function listenSerial() {
+			serialMonitorActive = true;
+			while (port && reader) {
+				try {
+					const { value, done } = await reader.read();
+					if (done) break;
+					if (value) {
+						const text = new TextDecoder().decode(value);
+						logSerial('raw', text);
+						if (!chipDetected) detectChip(text);
+					}
+				} catch (e) {
+					break;
+				}
+			}
+			serialMonitorActive = false;
+		}
+
+		function logSerial(level, msg) {
+			msg.split(/\r?\n/).forEach(line => {
+				if (!line) return;
+				serialLog.push({ level, line });
+				if (serialLog.length > 500) serialLog.shift();
+			});
+			renderSerialLog();
+		}
+
+		function renderSerialLog() {
+			serialLogEl.innerHTML = serialLog.map(l => `<span class="log-line log-${l.level}">${l.line}</span>`).join('') + '<span class="log-cursor"></span>';
+			serialLogEl.scrollTop = serialLogEl.scrollHeight;
+		}
+		document.getElementById('btn-clear-log').onclick = () => {
+			serialLog = [];
+			renderSerialLog();
+		};
+
+
+		// --- Chip Detection ---
+		function detectChip(text) {
+			// Known ESP magic values and bootloader strings
+			const chips = [
+				{ family: 'ESP32‑C5', magic: '0x5fd1406f', regex: /ESP32[\- ]?C5/i },
+				{ family: 'ESP32‑C6', magic: '0x6f51306f', regex: /ESP32[\- ]?C6/i },
+				{ family: 'ESP32‑H2', magic: '0x6f51306f', regex: /ESP32[\- ]?H2/i },
+				{ family: 'ESP32‑P4', magic: '0x6f51306f', regex: /ESP32[\- ]?P4/i },
+				{ family: 'ESP32‑C3', magic: '0x6921506f', regex: /ESP32[\- ]?C3/i },
+				{ family: 'ESP32‑S3', magic: '0x09[0-9a-fA-F]{6}', regex: /ESP32[\- ]?S3/i },
+				{ family: 'ESP32‑S2', magic: '0x00000000', regex: /ESP32[\- ]?S2/i },
+				{ family: 'ESP32', magic: '0x00f01d83', regex: /ESP32(?![\- ]?C|[\- ]?S|[\- ]?H|[\- ]?P)/i },
+				{ family: 'ESP8266', magic: '0x00062000', regex: /ESP8266/i },
+			];
+			text = text || '';
+			let found = null;
+			let foundMagic = null;
+			let foundBoot = null;
+			let foundRev = null;
+			// 1. Magic value detection
+			for (const chip of chips) {
+				if (text.includes(chip.magic)) {
+					found = chip;
+					foundMagic = chip.magic;
+					break;
+				}
+			}
+			// 2. Bootloader string detection
+			if (!found) {
+				for (const chip of chips) {
+					if (chip.regex && chip.regex.test(text)) {
+						found = chip;
+						break;
+					}
+				}
+			}
+			// 3. Try to extract magic value if not matched
+			if (!foundMagic) {
+				const magicMatch = text.match(/0x[0-9a-fA-F]{8}/);
+				if (magicMatch) foundMagic = magicMatch[0];
+			}
+			// 4. Try to extract revision
+			foundRev = text.match(/rev\s*([0-9.]+)/i)?.[1] || '';
+			// 5. Try to extract bootloader string
+			foundBoot = text.match(/(ESP32[\w\- ]+ bootloader[\w\- ]*)/i)?.[1] || '';
+			// 6. Set status
+			if (found) {
+				chipDetected = true;
+				chipRev = foundRev;
+				setStatusChip({
+					family: found.family,
+					revision: foundRev,
+					magic: foundMagic || found.magic,
+					bootloader: foundBoot
+				});
+			} else if (foundMagic) {
+				chipDetected = true;
+				setStatusChip({
+					unknown: true,
+					magic: foundMagic
+				});
+			} else {
+				chipDetected = false;
+				setStatusChip(null);
+			}
+		}
+
+		// --- Connect/Disconnect Button ---
+		document.getElementById('btn-connect').onclick = async () => {
+			if (port) {
+				await disconnectSerial();
+			} else {
+				await connectSerial();
+			}
+		};
+
+		// --- Flash Firmware ---
+		document.getElementById('flash-form').onsubmit = async e => {
+			e.preventDefault();
+			if (!port) {
+				logSerial('error', 'Not connected to device.');
+				return;
+			}
+			const file = document.getElementById('binfile').files[0];
+			if (!file) return;
+			const offset = document.getElementById('offset').value;
+			const baud = parseInt(document.getElementById('baud').value);
+			const forceRev1 = document.getElementById('force-rev1').checked;
+			setStatusBaud(baud);
+			document.getElementById('flash-status').textContent = '';
+			document.getElementById('flash-progress').style.display = '';
+			let bytesWritten = 0;
+			let total = file.size;
+			let chunkSize = 1024;
+			let progressEl = document.getElementById('progress-inner');
+			progressEl.style.width = '0%';
+			try {
+				// Send flash command header
+				await sendCommand(`FLASH ${offset} ${baud} ${forceRev1 ? 'FORCE' : ''}\n`);
+				// Write file in chunks
+				for (let pos = 0; pos < total; pos += chunkSize) {
+					const chunk = await file.slice(pos, pos + chunkSize).arrayBuffer();
+					await writer.write(new Uint8Array(chunk));
+					bytesWritten += chunk.byteLength;
+					progressEl.style.width = `${Math.floor(100 * bytesWritten / total)}%`;
+				}
+				await sendCommand('FLASH_DONE\n');
+				document.getElementById('flash-status').textContent = `Flashed ${bytesWritten} bytes.`;
+				logSerial('ok', `Flashed ${bytesWritten} bytes.`);
+			} catch (err) {
+				document.getElementById('flash-status').textContent = 'Flash failed: ' + err;
+				logSerial('error', 'Flash failed: ' + err);
+			}
+			document.getElementById('flash-progress').style.display = 'none';
+		};
+
+		// --- Erase Flash ---
+		document.getElementById('btn-erase').onclick = async () => {
+			if (!port) {
+				document.getElementById('erase-status').textContent = 'Not connected.';
+				return;
+			}
+			document.getElementById('erase-status').textContent = 'Erasing...';
+			try {
+				await sendCommand('ERASE\n');
+				document.getElementById('erase-status').textContent = 'Erase command sent.';
+				logSerial('info', 'Erase command sent.');
+			} catch (err) {
+				document.getElementById('erase-status').textContent = 'Erase failed: ' + err;
+				logSerial('error', 'Erase failed: ' + err);
+			}
+		};
+
+		// --- Send Command Helper ---
+		async function sendCommand(cmd) {
+			if (!writer) throw new Error('Not connected');
+			await writer.write(new TextEncoder().encode(cmd));
+		}
+
+		// --- Serial Monitor Panel ---
+		// (auto-scroll handled in renderSerialLog)
+
+		// --- On Load: Try to auto-detect chip if already connected ---
+		if (navigator.serial) {
+			setStatusConn(false);
+			setStatusChip(null);
+		} else {
+			setStatusConn(false);
+			setStatusChip(null);
+			logSerial('error', 'WebSerial not supported in this browser.');
+			alert('WebSerial not supported in this browser. Use Chrome or Edge.');
+		}
+	</script>
+</body>
+</html>
