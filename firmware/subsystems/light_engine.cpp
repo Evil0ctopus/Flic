@@ -56,7 +56,7 @@ float emotionBrightnessScale(const String& emotion) {
     if (emotion == "surprised") {
         return 1.4f;
     }
-    return 0.9f;
+    return 0.55f;
 }
 
 void scaleColor(uint8_t& r, uint8_t& g, uint8_t& b, float scale) {
@@ -86,7 +86,7 @@ bool LightEngine::begin() {
     available_ = M5.Led.isEnabled();
     externalAvailable_ = false;
 
-    if (!available_ && Flic::kExternalRgbLedPin >= 0 && Flic::kExternalRgbLedCount > 0) {
+    if (Flic::kExternalRgbLedPin >= 0 && Flic::kExternalRgbLedCount > 0) {
         if (gExternalStrip == nullptr) {
             gExternalStrip = new Adafruit_NeoPixel(Flic::kExternalRgbLedCount,
                                                    static_cast<int16_t>(Flic::kExternalRgbLedPin),
@@ -106,19 +106,32 @@ bool LightEngine::begin() {
 
     setBrightness(20);
     setColor(0, 0, 40);
-    return available_;
+    return available_ || externalAvailable_;
 }
 
 void LightEngine::update() {
-    if (!externalAvailable_ || gExternalStrip == nullptr) {
-        return;
-    }
-
     const unsigned long now = millis();
     if ((now - lastEffectMs_) < effectSpeedMs_) {
         return;
     }
     lastEffectMs_ = now;
+
+    // Universal breathing for calm/sleepy so the LED is alive without staying solid.
+    if (effectStyle_ == EffectStyle::CalmBreath || effectStyle_ == EffectStyle::SleepyDrift) {
+        const uint8_t wave = (effectPhase_ < 128) ? effectPhase_ : static_cast<uint8_t>(255 - effectPhase_);
+        const uint8_t minPct = (effectStyle_ == EffectStyle::SleepyDrift) ? 25 : 35;
+        const uint8_t maxPct = 100;
+        const uint8_t pct = static_cast<uint8_t>(minPct + ((static_cast<uint16_t>(wave) * (maxPct - minPct)) / 127U));
+        const uint8_t dynamicEmotion = scaleByPercent(baseEmotionBrightness_, pct);
+        const uint8_t effective = userBrightness_ < dynamicEmotion ? userBrightness_ : dynamicEmotion;
+        applyBrightness(effective);
+    }
+
+    if (!externalAvailable_ || gExternalStrip == nullptr) {
+        effectPhase_ = static_cast<uint8_t>(effectPhase_ + 7);
+        return;
+    }
+
     effectOffset_ = static_cast<uint8_t>((effectOffset_ + 1) % Flic::kExternalRgbLedCount);
     effectPhase_ = static_cast<uint8_t>(effectPhase_ + 7);
     renderExternalAnimated();
@@ -129,14 +142,15 @@ void LightEngine::setColor(uint8_t r, uint8_t g, uint8_t b) {
     currentG_ = g;
     currentB_ = b;
 
-    if (available_) {
-        M5.Led.setAllColor(r, g, b);
-        M5.Led.display();
-    } else if (externalAvailable_ && gExternalStrip != nullptr) {
+    // Always attempt internal RGB output first; backend guards can be unreliable across boots.
+    M5.Led.setAllColor(r, g, b);
+    M5.Led.display();
+
+    if (externalAvailable_ && gExternalStrip != nullptr) {
         renderExternalAnimated();
-    } else {
-        applyFallbackColor();
     }
+
+    applyFallbackColor();
 
     WebUiEventHook::emit("light", String("{\"kind\":\"color\",\"r\":") + r + ",\"g\":" + g + ",\"b\":" + b + "}");
 }
@@ -200,11 +214,11 @@ void LightEngine::pulse(uint8_t r, uint8_t g, uint8_t b, int speed) {
     const int stepDelay = speed < 8 ? 8 : speed;
     const uint8_t restoreBrightness = emotionBrightness_;
 
-    for (uint8_t level = 9; level <= 19; level += 5) {
+    for (uint8_t level = 28; level <= 90; level += 16) {
         setEmotionBrightness(level);
         delay(stepDelay);
     }
-    for (int level = 19; level >= 9; level -= 5) {
+    for (int level = 90; level >= 28; level -= 16) {
         setEmotionBrightness(static_cast<uint8_t>(level));
         delay(stepDelay);
     }
@@ -289,6 +303,11 @@ void LightEngine::emotionColor(const String& emotion) {
         loadedMap = true;
     }
 
+    const bool emotionChanged = emotion != lastEmotion;
+    if (!emotionChanged && loadedMap) {
+        return;
+    }
+
     EmotionLedColor color = defaultEmotionColor(emotion);
     if (emotion == "calm") {
         color = calm;
@@ -308,9 +327,10 @@ void LightEngine::emotionColor(const String& emotion) {
     scaleColor(adjustedR, adjustedG, adjustedB, emotionBrightnessScale(emotion));
     configureEffectForEmotion(emotion);
     setColor(adjustedR, adjustedG, adjustedB);
-    setEmotionBrightness(static_cast<uint8_t>(emotionBrightnessScale(emotion) * 100.0f));
+    baseEmotionBrightness_ = static_cast<uint8_t>(emotionBrightnessScale(emotion) * 100.0f);
+    setEmotionBrightness(baseEmotionBrightness_);
 
-    if (emotion != lastEmotion) {
+    if (emotionChanged) {
         lastEmotion = emotion;
         WebUiEventHook::emit("light", String("{\"kind\":\"emotion\",\"emotion\":\"") + emotion + "\"}");
     }
@@ -319,32 +339,41 @@ void LightEngine::emotionColor(const String& emotion) {
 void LightEngine::applyBrightness(uint8_t level) {
     const uint8_t ledLevel = toLedLevel(level);
 
-    if (available_) {
-        M5.Led.setBrightness(ledLevel);
-        M5.Led.display();
-    } else if (externalAvailable_ && gExternalStrip != nullptr) {
+    M5.Led.setBrightness(ledLevel);
+    M5.Led.display();
+
+    if (externalAvailable_ && gExternalStrip != nullptr) {
         gExternalStrip->setBrightness(ledLevel);
         renderExternalAnimated();
-        return;
-    } else {
-        applyFallbackColor();
-        return;
     }
 
     M5.Power.setLed(ledLevel);
 }
 
 void LightEngine::refreshBrightness() {
-    const uint8_t effectiveBrightness = userBrightness_ < emotionBrightness_ ? userBrightness_ : emotionBrightness_;
+    uint8_t effectiveBrightness = userBrightness_ < emotionBrightness_ ? userBrightness_ : emotionBrightness_;
+
+    // Keep the LED visibly on during normal operation without breaking intentional off states.
+    const bool hasColor = (currentR_ != 0U) || (currentG_ != 0U) || (currentB_ != 0U);
+    if (hasColor && userBrightness_ > 0U && emotionBrightness_ > 0U && effectiveBrightness > 0U &&
+        effectiveBrightness < 12U) {
+        effectiveBrightness = 12U;
+    }
+
     applyBrightness(effectiveBrightness);
 }
 
 void LightEngine::applyFallbackColor() {
     const uint8_t effectiveBrightness = userBrightness_ < emotionBrightness_ ? userBrightness_ : emotionBrightness_;
-    const uint16_t colorPeak = currentR_ > currentG_ ? (currentR_ > currentB_ ? currentR_ : currentB_)
-                                                     : (currentG_ > currentB_ ? currentG_ : currentB_);
-    const uint16_t scaled = static_cast<uint16_t>((colorPeak * static_cast<uint16_t>(toLedLevel(effectiveBrightness))) / 255U);
-    M5.Power.setLed(static_cast<uint8_t>(scaled));
+    const bool hasColor = (currentR_ != 0U) || (currentG_ != 0U) || (currentB_ != 0U);
+    if (!hasColor || effectiveBrightness == 0U) {
+        M5.Power.setLed(0);
+        return;
+    }
+
+    // The fallback LED is single-channel; drive it by brightness level directly
+    // so low-saturation colors (like calm blue) remain visible.
+    M5.Power.setLed(toLedLevel(effectiveBrightness));
 }
 
 void LightEngine::renderExternalAnimated() {

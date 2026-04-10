@@ -1024,6 +1024,32 @@
 				"panel": "shared"
 			},
 			"problemMatcher": []
+		},
+		{
+			"label": "Backup F Drive PNGs to Local",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-NoProfile",
+				"-ExecutionPolicy",
+				"Bypass",
+				"-File",
+				"scripts/backup_f_drive_pngs.ps1",
+				"-SourceRoot",
+				"F:\\",
+				"-BackupRoot",
+				"${workspaceFolder}/firmware_assets/sdcard_backup",
+				"-LogFile",
+				"${workspaceFolder}/firmware_assets/sdcard_backup/backup_log.txt"
+			],
+			"group": "build",
+			"problemMatcher": [],
+			"presentation": {
+				"reveal": "always",
+				"panel": "dedicated",
+				"showReuseMessage": false,
+				"clear": true
+			}
 		}
 	]
 }

@@ -18,23 +18,23 @@
 namespace Flic {
 // Verifies the presence and frame count of a required animation set, logs results
 bool FaceEngine::verifyAnimationSet(const char* animationName) const {
-    Serial.printf("Flic: Animation verify: %s...\n", animationName);
+    Serial.printf("[LOAD] Animation verify: %s...\n", animationName);
     const AnimationDefinition* def = definitionFor(animationName);
     if (!def) {
-        Serial.printf("Flic: Animation verify: definition NOT FOUND: %s\n", animationName);
+        Serial.printf("[LOAD] Animation verify: definition NOT FOUND: %s\n", animationName);
         return false;
     }
     FrameSequence seq = resolveSequence(activeStyle_, animationName);
     if (seq.frames.empty()) {
-        Serial.printf("Flic: Animation verify: frames MISSING: %s\n", animationName);
+        Serial.printf("[LOAD] Animation verify: frames MISSING: %s\n", animationName);
         return false;
     }
-    Serial.printf("Flic: Animation verify: %s: %u frames (expected %u)\n", animationName, (unsigned)seq.frames.size(), (unsigned)def->expectedFrames);
+    Serial.printf("[LOAD] Animation verify: %s: %u frames (expected %u)\n", animationName, (unsigned)seq.frames.size(), (unsigned)def->expectedFrames);
     if (seq.frames.size() < def->expectedFrames) {
-        Serial.printf("Flic: Animation verify: WARNING: %s has fewer frames than expected!\n", animationName);
+        Serial.printf("[LOAD] Animation verify: WARNING: %s has fewer frames than expected!\n", animationName);
         return false;
     }
-    Serial.printf("Flic: Animation verify: OK: %s\n", animationName);
+    Serial.printf("[LOAD] Animation verify: OK: %s\n", animationName);
     return true;
 }
 } // namespace Flic
@@ -57,6 +57,10 @@ bool FaceEngine::verifyAnimationSet(const char* animationName) const {
 #include <cmath>
 #include <cstring>
 #include <type_traits>
+
+#ifndef VECTOR_ONLY_FACE
+#define VECTOR_ONLY_FACE 0
+#endif
 
 const Flic::FaceEngine::AnimationDefinition kPrimeDefinitions[] = {
     {"idle", 12, 150, Flic::FaceEngine::TimingCurve::Linear, 1.00f, 10.0f, false, false, false},
@@ -84,6 +88,7 @@ constexpr uint32_t kSchedulerFrameMs = 16;
 constexpr uint32_t kTelemetryLogPeriodMs = 5000;
 constexpr uint32_t kMissingFramesLogIntervalMs = 2000;
 constexpr bool kEnableGlowOverlay = false;
+constexpr bool kEnableVectorBootAnimation = false;
 constexpr size_t kInlineFrameMaxBytes = 48 * 1024;
 constexpr size_t kStreamFrameMaxBytes = 2 * 1024 * 1024;
 constexpr uint16_t kExpectedFrameWidth = 240;
@@ -220,8 +225,18 @@ void waitForDisplayReady(T& display) {
     waitForDisplayReadyImpl(display);
 }
 
+template <typename T>
+void clearFrameBackground(T& display, int x, int y, int width, int height) {
+    display.fillRect(x, y, width, height, TFT_BLACK);
+}
+
 bool endsWithPng(const String& value) {
+#if VECTOR_ONLY_FACE
+    (void)value;
+    return false;
+#else
     return value.endsWith(".png");
+#endif
 }
 
 uint32_t hashString(const String& value) {
@@ -253,6 +268,13 @@ bool isFrameNameValid(const String& value) {
 }
 
 bool readPngHeader(const String& path, uint32_t& width, uint32_t& height, uint8_t& colorType) {
+#if VECTOR_ONLY_FACE
+    (void)path;
+    width = 0;
+    height = 0;
+    colorType = 0;
+    return false;
+#else
     if (!SdManager::isMounted()) {
         return false;
     }
@@ -290,6 +312,60 @@ bool readPngHeader(const String& path, uint32_t& width, uint32_t& height, uint8_
              (static_cast<uint32_t>(header[22]) << 8) | static_cast<uint32_t>(header[23]);
     colorType = header[25];
     return true;
+#endif
+}
+
+int decodePngStatusCode(const String& path, uint32_t& width, uint32_t& height, uint8_t& colorType) {
+#if VECTOR_ONLY_FACE
+    (void)path;
+    width = 0;
+    height = 0;
+    colorType = 0;
+    return -100;
+#else
+    if (!SdManager::isMounted()) {
+        return -1;
+    }
+
+    width = 0;
+    height = 0;
+    colorType = 0;
+
+    File file = SD.open(path, FILE_READ);
+    if (!file) {
+        return -2;
+    }
+
+    uint8_t header[33] = {};
+    const size_t n = file.read(header, sizeof(header));
+    file.close();
+    if (n < sizeof(header)) {
+        return -3;
+    }
+
+    static constexpr uint8_t kSig[8] = {137, 80, 78, 71, 13, 10, 26, 10};
+    for (uint8_t i = 0; i < 8; ++i) {
+        if (header[i] != kSig[i]) {
+            return -4;
+        }
+    }
+
+    if (!(header[12] == 'I' && header[13] == 'H' && header[14] == 'D' && header[15] == 'R')) {
+        return -5;
+    }
+
+    width = (static_cast<uint32_t>(header[16]) << 24) | (static_cast<uint32_t>(header[17]) << 16) |
+            (static_cast<uint32_t>(header[18]) << 8) | static_cast<uint32_t>(header[19]);
+    height = (static_cast<uint32_t>(header[20]) << 24) | (static_cast<uint32_t>(header[21]) << 16) |
+             (static_cast<uint32_t>(header[22]) << 8) | static_cast<uint32_t>(header[23]);
+    colorType = header[25];
+
+    if (width != kExpectedFrameWidth || height != kExpectedFrameHeight) {
+        return -6;
+    }
+
+    return 0;
+#endif
 }
 
 int frameNumberFromName(const String& value) {
@@ -357,7 +433,11 @@ void FaceEngine::playbackTask(void* parameter) {
     auto* owner = static_cast<FaceEngine*>(parameter);
     PlaybackRequest request{};
     for (;;) {
-        if (gPlaybackQueue == nullptr || xQueueReceive(gPlaybackQueue, &request, portMAX_DELAY) != pdTRUE) {
+        if (gPlaybackQueue == nullptr) {
+            vTaskDelay(pdMS_TO_TICKS(kSchedulerFrameMs));
+            continue;
+        }
+        if (xQueueReceive(gPlaybackQueue, &request, pdMS_TO_TICKS(kSchedulerFrameMs)) != pdTRUE) {
             continue;
         }
 
@@ -380,7 +460,7 @@ void FaceEngine::playbackTask(void* parameter) {
         if (sequence.frames.empty()) {
             const unsigned long nowMs = millis();
             if ((nowMs - gLastMissingFramesLogMs) >= kMissingFramesLogIntervalMs) {
-                Serial.printf("[Face] no frames found for %s/%s\n", style.c_str(), animation.c_str());
+                Serial.printf("[PLAY] Missing frames for %s/%s\n", style.c_str(), animation.c_str());
                 gLastMissingFramesLogMs = nowMs;
             }
             if (owner != nullptr) {
@@ -406,35 +486,28 @@ void FaceEngine::playbackTask(void* parameter) {
                                                       : sequence.frameDelayMs;
             const unsigned long frameStartMs = millis();
 
-            do {
-                if (gInterruptRequested && request.priority == 0) {
-                    break;
-                }
-
+            if (owner != nullptr) {
                 const unsigned long nowMs = millis();
                 const float dtSeconds = static_cast<float>(nowMs - lastTickMs) / 1000.0f;
                 lastTickMs = nowMs;
 
-                if (owner != nullptr) {
-                    const EmotionBlendEngine::Snapshot blendSnapshot = owner->updateBlend(nowMs);
-                    const String renderEmotion = owner->renderEmotionForBlend(nowMs, static_cast<uint32_t>(frameIndex), blendSnapshot);
-                    owner->updateEmotion(nowMs);
-                    owner->updatePersonality(nowMs, blendSnapshot, renderEmotion);
-                    const PersonalityProfile profile = owner->personalityStateMachine_.profile();
-                    const MicroExpressionFrame microFrame = owner->updateMicroExpressions(nowMs,
-                                                                                           dtSeconds,
-                                                                                           blendSnapshot,
-                                                                                           renderEmotion,
-                                                                                           profile);
+                const EmotionBlendEngine::Snapshot blendSnapshot = owner->updateBlend(nowMs);
+                const String renderEmotion = owner->renderEmotionForBlend(nowMs, static_cast<uint32_t>(frameIndex), blendSnapshot);
+                owner->updateEmotion(nowMs);
+                owner->updatePersonality(nowMs, blendSnapshot, renderEmotion);
+                const PersonalityProfile profile = owner->personalityStateMachine_.profile();
+                const MicroExpressionFrame microFrame = owner->updateMicroExpressions(nowMs,
+                                                                                       dtSeconds,
+                                                                                       blendSnapshot,
+                                                                                       renderEmotion,
+                                                                                       profile);
 
-                    FaceEngine::FrameSequence renderSequence = owner->resolveSequence(style, renderEmotion);
-                    if (renderSequence.frames.empty()) {
-                        renderSequence = owner->resolveFallbackSequence(kDefaultAnimation);
-                    }
-                    if (renderSequence.frames.empty()) {
-                        break;
-                    }
+                FaceEngine::FrameSequence renderSequence = owner->resolveSequence(style, renderEmotion);
+                if (renderSequence.frames.empty()) {
+                    renderSequence = owner->resolveFallbackSequence(kDefaultAnimation);
+                }
 
+                if (!renderSequence.frames.empty()) {
                     const size_t renderIndex = owner->renderFrameIndexFor(renderSequence,
                                                                           nowMs,
                                                                           static_cast<uint32_t>(frameIndex),
@@ -459,6 +532,10 @@ void FaceEngine::playbackTask(void* parameter) {
                             sourceSequencePtr = &sourceSequence;
                         }
                     }
+
+                    const FaceEngine::FrameAsset& renderFrameAsset = renderSequence.frames[renderIndex % renderSequence.frames.size()];
+                    (void)renderFrameAsset;
+
                     const unsigned long drawStartUs = micros();
                     owner->drawFrame(renderSequence,
                                      renderIndex,
@@ -474,15 +551,25 @@ void FaceEngine::playbackTask(void* parameter) {
                                               drawUs,
                                               delayMs,
                                               drawUs > (static_cast<uint32_t>(delayMs) * 1000UL));
-                    owner->emitTelemetryIfDue(nowMs);
                 }
 
-                if ((millis() - frameStartMs) >= delayMs) {
+                owner->emitTelemetryIfDue(nowMs);
+            }
+
+            while ((millis() - frameStartMs) < delayMs) {
+                if (gInterruptRequested && request.priority == 0) {
                     break;
                 }
 
+                const unsigned long nowMs = millis();
+                lastTickMs = nowMs;
+                if (owner != nullptr) {
+                    owner->updateEmotion(nowMs);
+                    owner->emitTelemetryIfDue(nowMs);
+                }
+
                 vTaskDelay(pdMS_TO_TICKS(kSchedulerFrameMs));
-            } while (true);
+            }
 
             if (gInterruptRequested && request.priority == 0) {
                 break;
@@ -493,11 +580,159 @@ void FaceEngine::playbackTask(void* parameter) {
             owner->finishPlayback();
         }
 
-        const unsigned long elapsedMs = millis() - startMs;
-        Serial.printf("[Face] playback done style=%s animation=%s elapsed=%lu ms\n",
-                      style.c_str(), animation.c_str(), static_cast<unsigned long>(elapsedMs));
+        (void)startMs;
         gFaceBusy = false;
     }
+}
+
+void FaceEngine::renderBootAnimation() {
+    auto& display = M5.Display;
+    const int centerX = display.width() / 2;
+    const int centerY = display.height() / 2;
+    const int eyeOffsetX = 42;
+    const int eyeY = centerY - 18;
+    const int bootDurationMs = 15000;
+    const int fadeStartMs = 13000;
+
+    auto smoothstep = [](float x) {
+        if (x < 0.0f) {
+            x = 0.0f;
+        }
+        if (x > 1.0f) {
+            x = 1.0f;
+        }
+        return x * x * (3.0f - 2.0f * x);
+    };
+
+    auto sineInOut = [](float x) {
+        if (x < 0.0f) {
+            x = 0.0f;
+        }
+        if (x > 1.0f) {
+            x = 1.0f;
+        }
+        return 0.5f - 0.5f * std::cos(x * 3.14159265f);
+    };
+
+    const unsigned long startMs = millis();
+    unsigned long nextFrameMs = startMs;
+
+    while (true) {
+        const unsigned long nowMs = millis();
+        const unsigned long elapsedMs = nowMs - startMs;
+        if (elapsedMs >= static_cast<unsigned long>(bootDurationMs)) {
+            break;
+        }
+
+        const float t = static_cast<float>(elapsedMs) / static_cast<float>(bootDurationMs);
+        const float fadeT = elapsedMs <= static_cast<unsigned long>(fadeStartMs)
+                                ? 0.0f
+                                : static_cast<float>(elapsedMs - fadeStartMs) /
+                                      static_cast<float>(bootDurationMs - fadeStartMs);
+        const float fadeOut = 1.0f - smoothstep(fadeT);
+
+        const float pulseCycleMs = 1700.0f;
+        const float pulsePhase = std::fmod(static_cast<float>(elapsedMs), pulseCycleMs) / pulseCycleMs;
+        const float pulseSmooth = smoothstep(pulsePhase);
+        const float pulseSin = sineInOut(pulsePhase);
+        const float pulseStrength = (0.35f + 0.65f * (0.5f * pulseSmooth + 0.5f * pulseSin)) * fadeOut;
+
+        const float cyanShift = smoothstep(t);
+        const float baseR = 255.0f * (1.0f - cyanShift);
+        const float baseG = 255.0f;
+        const float baseB = 255.0f;
+
+        waitForDisplayReady(display);
+        display.startWrite();
+        display.fillScreen(TFT_BLACK);
+
+        // Strong neon pulse core.
+        const uint16_t coreColor = display.color565(static_cast<uint8_t>(baseR * pulseStrength),
+                                                    static_cast<uint8_t>(baseG * pulseStrength),
+                                                    static_cast<uint8_t>(baseB * pulseStrength));
+        const int coreRadius = 10 + static_cast<int>(14.0f * pulseSin);
+        display.fillCircle(centerX, centerY, coreRadius, coreColor);
+
+        // Expanding white->cyan gradient rings.
+        for (int ring = 0; ring < 5; ++ring) {
+            const float ringOffset = static_cast<float>(ring) * 0.18f;
+            float localPhase = pulsePhase + ringOffset;
+            if (localPhase > 1.0f) {
+                localPhase -= 1.0f;
+            }
+
+            const float ringEase = smoothstep(localPhase);
+            const int ringRadius = 24 + static_cast<int>(ringEase * 126.0f);
+            const float ringEnergy = (1.0f - ringEase) * (1.0f - ringEase) * pulseStrength;
+            const float ringCyanMix = cyanShift * (0.45f + 0.55f * ringEase);
+
+            const uint8_t ringR = static_cast<uint8_t>(255.0f * (1.0f - ringCyanMix) * ringEnergy);
+            const uint8_t ringG = static_cast<uint8_t>(255.0f * ringEnergy);
+            const uint8_t ringB = static_cast<uint8_t>(255.0f * ringEnergy);
+            const uint16_t ringColor = display.color565(ringR, ringG, ringB);
+
+            display.drawCircle(centerX, centerY, ringRadius, ringColor);
+            display.drawCircle(centerX, centerY, ringRadius + 1, ringColor);
+        }
+
+        // Eye reveal starts at 6 seconds.
+        if (elapsedMs >= 6000) {
+            const float reveal = smoothstep(static_cast<float>(elapsedMs - 6000) / 4000.0f) * fadeOut;
+            const uint16_t eyeOutline = display.color565(static_cast<uint8_t>(220.0f * reveal),
+                                                         static_cast<uint8_t>(255.0f * reveal),
+                                                         static_cast<uint8_t>(255.0f * reveal));
+
+            if (elapsedMs < 10000) {
+                const int arcR0 = 9;
+                const int arcR1 = 12;
+                display.drawArc(centerX - eyeOffsetX, eyeY, arcR0, arcR1, 215.0f, 332.0f, eyeOutline);
+                display.drawArc(centerX + eyeOffsetX, eyeY, arcR0, arcR1, 208.0f, 325.0f, eyeOutline);
+            } else {
+                // Stabilized eyes + one cute blink after 10 seconds.
+                float blink = 0.0f;
+                const unsigned long blinkStart = 10850;
+                const unsigned long blinkMid = 11000;
+                const unsigned long blinkEnd = 11150;
+                if (elapsedMs >= blinkStart && elapsedMs < blinkMid) {
+                    blink = static_cast<float>(elapsedMs - blinkStart) / static_cast<float>(blinkMid - blinkStart);
+                } else if (elapsedMs >= blinkMid && elapsedMs < blinkEnd) {
+                    blink = 1.0f - static_cast<float>(elapsedMs - blinkMid) / static_cast<float>(blinkEnd - blinkMid);
+                }
+
+                const int eyeRadius = 11;
+                const int lid = static_cast<int>(blink * 10.0f);
+                if (lid >= 8) {
+                    display.drawFastHLine(centerX - eyeOffsetX - eyeRadius, eyeY, eyeRadius * 2, eyeOutline);
+                    display.drawFastHLine(centerX + eyeOffsetX - eyeRadius, eyeY, eyeRadius * 2, eyeOutline);
+                } else {
+                    display.drawCircle(centerX - eyeOffsetX, eyeY, eyeRadius, eyeOutline);
+                    display.drawCircle(centerX + eyeOffsetX, eyeY, eyeRadius, eyeOutline);
+                    if (lid > 0) {
+                        display.fillRect(centerX - eyeOffsetX - eyeRadius - 1, eyeY - eyeRadius - 1,
+                                         eyeRadius * 2 + 3, lid, TFT_BLACK);
+                        display.fillRect(centerX + eyeOffsetX - eyeRadius - 1, eyeY - eyeRadius - 1,
+                                         eyeRadius * 2 + 3, lid, TFT_BLACK);
+                    }
+                }
+            }
+        }
+
+        display.endWrite();
+
+        // Frame pacing only.
+        nextFrameMs += 16;
+        const unsigned long frameNow = millis();
+        if (nextFrameMs > frameNow) {
+            const unsigned long sleepMs = nextFrameMs - frameNow;
+            vTaskDelay(pdMS_TO_TICKS(sleepMs > 1 ? sleepMs : 1));
+        } else {
+            nextFrameMs = frameNow;
+        }
+    }
+
+    display.startWrite();
+    display.fillScreen(TFT_BLACK);
+    display.endWrite();
 }
 
 bool FaceEngine::begin() {
@@ -543,6 +778,21 @@ bool FaceEngine::begin() {
     personalityMemory_.begin(kPersonalityMemoryPath);
     personalityMemory_.setLastKnownMood(getMood());
 
+    if (!setStyle(activeStyle_)) {
+        activeStyle_ = kDefaultStyle;
+    }
+
+    // Run startup boot sequence before asynchronous playback begins.
+    if (kEnableVectorBootAnimation) {
+        renderBootAnimation();
+    } else {
+        auto& display = M5.Display;
+        waitForDisplayReady(display);
+        display.startWrite();
+        display.fillScreen(TFT_BLACK);
+        display.endWrite();
+    }
+
     if (gPlaybackQueue == nullptr) {
         gPlaybackQueue = xQueueCreate(kPlaybackQueueLength, sizeof(PlaybackRequest));
     }
@@ -556,11 +806,9 @@ bool FaceEngine::begin() {
                                 1);
     }
 
-    if (!setStyle(activeStyle_)) {
-        activeStyle_ = kDefaultStyle;
-    }
+    loadAnimation(kDefaultAnimation);
+    playAnimation(kDefaultAnimation);
 
-    // Keep screen clean after boot; first face render should be explicit or scheduler-driven later.
     lastIdlePulseMs_ = millis();
     return gPlaybackQueue != nullptr && gPlaybackTask != nullptr;
 }
@@ -575,6 +823,7 @@ void FaceEngine::update(float deltaSeconds) {
     microExpressionEngine_.setIntensity(microExpressionIntensity_ * adaptiveModifiers_.microExpressionScale);
     personalityStateMachine_.enableContextRules(contextRulesEnabled_);
     personalityStateMachine_.update(millis(), activeEmotion_, emotionBlendEngine_.isActive(millis()));
+    updatePersonality(deltaSeconds);
     if (speakingAmplitude_ > 0.0f) {
         speakingAmplitude_ -= deltaSeconds * 0.9f;
         if (speakingAmplitude_ < 0.0f) {
@@ -592,37 +841,49 @@ void FaceEngine::update(float deltaSeconds) {
 }
 
 bool FaceEngine::loadAnimationSet(const String& styleName) {
-    Serial.printf("Flic: loadAnimationSet: %s\n", styleName.c_str());
-    if (!scanIndex() && !SdManager::isMounted()) {
-        SdManager::mount();
+    Serial.printf("[LOAD] Loading animation set: %s\n", styleName.c_str());
+    if (styles_.empty()) {
+        styles_.push_back(kDefaultStyle);
     }
-    if (!scanIndex()) {
-        return false;
-    }
-    return setStyle(styleName);
+    return setStyle(styleName.length() > 0 ? styleName : String(kDefaultStyle));
 }
 
 bool FaceEngine::loadAnimation(const String& animationName) {
-    Serial.printf("Flic: loadAnimation: %s\n", animationName.c_str());
+    Serial.printf("[LOAD] Loading animation: %s\n", animationName.c_str());
     const String normalized = normalizeName(animationName);
     if (normalized.length() == 0) {
+        Serial.println("[LOAD] Invalid animation name");
+        Serial.printf("[LOAD] Frame count detected: 0\n");
         return false;
     }
-    FrameSequence sequence = resolveSequence(activeStyle_, normalized);
-    if (!sequence.frames.empty()) {
-        return true;
+
+    FrameSequence sequence;
+    sequence.style = activeStyle_.length() > 0 ? activeStyle_ : String(kDefaultStyle);
+    sequence.animation = normalized;
+    FrameAsset vectorFrame;
+    vectorFrame.path = "vector://" + sequence.animation;
+    sequence.frames.push_back(vectorFrame);
+    const AnimationDefinition* definition = definitionFor(sequence.animation);
+    if (definition != nullptr) {
+        sequence.frameDelayMs = definition->frameTimeMs;
+        sequence.curve = definition->curve;
+        sequence.glowMultiplier = definition->glowMultiplier;
+        sequence.glowVariationPercent = definition->glowVariationPercent;
+        sequence.slowPulse = definition->slowPulse;
+        sequence.dynamicSpeaking = definition->dynamicSpeaking;
+        sequence.glowSpike = definition->glowSpike;
     }
-    sequence = resolveFallbackSequence(normalized);
-    return !sequence.frames.empty();
+    Serial.printf("[LOAD] Frame count detected: %u\n", static_cast<unsigned>(sequence.frames.size()));
+    return true;
 }
 
 bool FaceEngine::playAnimation(const String& animationName) {
-    Serial.printf("Flic: playAnimation: %s\n", animationName.c_str());
+    Serial.printf("[PLAY] Queue animation: %s\n", animationName.c_str());
     return play(animationName);
 }
 
 bool FaceEngine::setStyle(const String& styleName) {
-    Serial.printf("Flic: setStyle: %s\n", styleName.c_str());
+    Serial.printf("[LOAD] Set style: %s\n", styleName.c_str());
     const String normalized = normalizeName(styleName);
     for (const String& style : styles_) {
         if (style == normalized) {
@@ -733,9 +994,20 @@ bool FaceEngine::setEmotion(const String& emotionName) {
     return setEmotionInternal(emotionName, true);
 }
 
+bool FaceEngine::clearEmotion() {
+    transitionToIdlePending_ = false;
+    activeEmotion_ = kDefaultAnimation;
+    activeAnimation_ = kDefaultAnimation;
+    microExpressionEngine_.reset();
+    const bool queued = triggerPlayback(activeStyle_, kDefaultAnimation, true);
+    playing_ = queued;
+    return queued;
+}
+
 bool FaceEngine::setEmotionInternal(const String& emotionName, bool explicitCommand) {
     const String normalized = normalizeName(emotionName);
     if (normalized.length() == 0) {
+        Serial.println("[LOAD] Invalid animation name");
         return false;
     }
 
@@ -774,7 +1046,7 @@ bool FaceEngine::setEmotionInternal(const String& emotionName, bool explicitComm
     personalityMemory_.recordEmotion(normalized, nowMs);
     personalityMemory_.setLastKnownMood(getMood());
     moodModel_.noteTaskSuccess();
-    transitionToIdlePending_ = false;
+    transitionToIdlePending_ = (target != String(kDefaultAnimation));
     playing_ = true;
     microExpressionEngine_.reset();
     if (target == "curious") {
@@ -1164,6 +1436,21 @@ void FaceEngine::applySettings(const FaceSettings& settings) {
     idleEnabled_ = settings.idleEnabled;
     glowIntensity_ = settings.glowIntensity < 0.0f ? 0.0f : (settings.glowIntensity > 1.0f ? 1.0f : settings.glowIntensity);
     eyeColor_ = sanitizeEyeColor(settings.eyeColor);
+    personalityIntensityPreset_ = normalizeName(settings.personalityIntensity);
+    if (personalityIntensityPreset_.length() == 0) {
+        personalityIntensityPreset_ = "balanced";
+    }
+    if (personalityIntensityPreset_ == "subtle") {
+        personalityExpressivenessScale_ = 0.72f;
+        personalityCadenceScale_ = 1.22f;
+    } else if (personalityIntensityPreset_ == "dramatic") {
+        personalityExpressivenessScale_ = 1.35f;
+        personalityCadenceScale_ = 0.74f;
+    } else {
+        personalityIntensityPreset_ = "balanced";
+        personalityExpressivenessScale_ = 1.0f;
+        personalityCadenceScale_ = 1.0f;
+    }
     setEmotionAnimationOverridesFromJson(settings.emotionAnimationMapJson);
     aiCanModify_ = settings.aiCanModify;
     aiCanCreate_ = settings.aiCanCreate;
@@ -1287,6 +1574,7 @@ String FaceEngine::settingsJson() const {
     payload += "\"idle_enabled\":" + String(idleEnabled_ ? "true" : "false") + ",";
     payload += "\"glow_intensity\":" + String(glowIntensity_, 2) + ",";
     payload += "\"eye_color\":\"" + eyeColor_ + "\",";
+    payload += "\"personality_intensity\":\"" + personalityIntensityPreset_ + "\",";
     payload += "\"emotion_animation_map\":" + emotionAnimationOverridesJson() + ",";
     payload += "\"ai_can_modify\":" + String(aiCanModify_ ? "true" : "false") + ",";
     payload += "\"ai_can_create\":" + String(aiCanCreate_ ? "true" : "false") + ",";
@@ -1411,6 +1699,32 @@ bool FaceEngine::reloadActiveStyle() {
 }
 
 String FaceEngine::validateAnimationSetJson() const {
+#if VECTOR_ONLY_FACE
+    String payload = "{\"ok\":true,\"required\":[";
+    for (size_t i = 0; i < requiredAnimations_.size(); ++i) {
+        if (i > 0) {
+            payload += ",";
+        }
+        payload += "\"";
+        payload += requiredAnimations_[i];
+        payload += "\"";
+    }
+    payload += "],\"results\":[";
+
+    bool first = true;
+    for (const String& animationName : requiredAnimations_) {
+        if (!first) {
+            payload += ",";
+        }
+        first = false;
+
+        payload += "{\"animation\":\"";
+        payload += animationName;
+        payload += "\",\"pass\":true,\"frame_count\":1,\"errors\":[]}";
+    }
+    payload += "]}";
+    return payload;
+#else
     String payload = "{\"ok\":true,\"required\":[";
     for (size_t i = 0; i < requiredAnimations_.size(); ++i) {
         if (i > 0) {
@@ -1504,6 +1818,7 @@ String FaceEngine::validateAnimationSetJson() const {
     }
     payload += "]}";
     return payload;
+#endif
 }
 
 bool FaceEngine::canWriteCustomAnimation() const {
@@ -1519,109 +1834,44 @@ bool FaceEngine::canCreateStyle() const {
 }
 
 String FaceEngine::customAnimationRoot(const String& animationName) const {
+#if VECTOR_ONLY_FACE
+    return "vector://" + normalizeName(animationName);
+#else
     return String(kFaceRoot) + "/custom/" + normalizeName(animationName);
+#endif
 }
 
 bool FaceEngine::scanIndex() {
     styles_.clear();
     index_.clear();
 
-    if (!SdManager::isMounted()) {
-        return false;
+    styles_.push_back(kDefaultStyle);
+    FrameSequence sequence;
+    sequence.style = kDefaultStyle;
+    sequence.animation = kDefaultAnimation;
+    FrameAsset vectorFrame;
+    vectorFrame.path = "vector://" + sequence.animation;
+    sequence.frames.push_back(vectorFrame);
+    const AnimationDefinition* definition = definitionFor(sequence.animation);
+    if (definition != nullptr) {
+        sequence.frameDelayMs = definition->frameTimeMs;
+        sequence.curve = definition->curve;
+        sequence.glowMultiplier = definition->glowMultiplier;
+        sequence.glowVariationPercent = definition->glowVariationPercent;
+        sequence.slowPulse = definition->slowPulse;
+        sequence.dynamicSpeaking = definition->dynamicSpeaking;
+        sequence.glowSpike = definition->glowSpike;
     }
-
-    File root = SD.open(kFaceRoot);
-    if (!root || !root.isDirectory()) {
-        return false;
-    }
-
-    File styleEntry = root.openNextFile();
-    while (styleEntry) {
-        if (!styleEntry.isDirectory()) {
-            styleEntry = root.openNextFile();
-            continue;
-        }
-
-        const String styleName = normalizeName(styleEntry.name());
-        if (styleName.length() == 0) {
-            styleEntry = root.openNextFile();
-            continue;
-        }
-
-        bool styleExists = false;
-        for (const String& knownStyle : styles_) {
-            if (knownStyle == styleName) {
-                styleExists = true;
-                break;
-            }
-        }
-        if (!styleExists) {
-            styles_.push_back(styleName);
-        }
-
-        File animationEntry = styleEntry.openNextFile();
-        while (animationEntry) {
-            if (!animationEntry.isDirectory()) {
-                animationEntry = styleEntry.openNextFile();
-                continue;
-            }
-
-            FrameSequence sequence;
-            sequence.style = styleName;
-            sequence.animation = normalizeName(animationEntry.name());
-
-            const AnimationDefinition* definition = definitionFor(sequence.animation);
-            if (definition != nullptr) {
-                sequence.frameDelayMs = definition->frameTimeMs;
-                sequence.curve = definition->curve;
-                sequence.glowMultiplier = definition->glowMultiplier;
-                sequence.glowVariationPercent = definition->glowVariationPercent;
-                sequence.slowPulse = definition->slowPulse;
-                sequence.dynamicSpeaking = definition->dynamicSpeaking;
-                sequence.glowSpike = definition->glowSpike;
-            }
-
-            File frameEntry = animationEntry.openNextFile();
-            while (frameEntry) {
-                if (!frameEntry.isDirectory()) {
-                    const String framePath = framePathFromEntry(styleName, sequence.animation, frameEntry.name());
-                    if (endsWithPng(framePath) && isFrameNameValid(framePath)) {
-                        uint32_t width = 0;
-                        uint32_t height = 0;
-                        uint8_t colorType = 0;
-                        if (readPngHeader(framePath, width, height, colorType) &&
-                            width == kExpectedFrameWidth && height == kExpectedFrameHeight) {
-                            FrameAsset asset = loadFrameAsset(framePath);
-                            if (asset.path.length() > 0) {
-                                sequence.frames.push_back(asset);
-                            }
-                        }
-                    }
-                }
-                frameEntry = animationEntry.openNextFile();
-            }
-
-            std::sort(sequence.frames.begin(), sequence.frames.end(), [](const FrameAsset& left, const FrameAsset& right) {
-                return frameNumberFromName(left.path) < frameNumberFromName(right.path);
-            });
-
-            if (!sequence.frames.empty()) {
-                index_.push_back(sequence);
-            }
-
-            animationEntry = styleEntry.openNextFile();
-        }
-        styleEntry = root.openNextFile();
-    }
-
-    if (styles_.empty()) {
-        styles_.push_back(kDefaultStyle);
-    }
-
+    index_.push_back(sequence);
+    Serial.println("[SCAN] Vector renderer active; SD animation scan disabled");
     return true;
 }
 
 bool FaceEngine::ensureFaceDirectories() {
+#if VECTOR_ONLY_FACE
+    Serial.println("[SCAN] Vector-only mode: directory creation skipped");
+    return true;
+#else
     SdManager::ensureDirectory(kFaceRoot);
     SdManager::ensureDirectory((String(kFaceRoot) + "/default").c_str());
     SdManager::ensureDirectory((String(kFaceRoot) + "/soft_glow").c_str());
@@ -1645,13 +1895,17 @@ bool FaceEngine::ensureFaceDirectories() {
         if (metadataFile) {
             metadataFile.print(defaultMetadataJson());
             metadataFile.close();
-            Serial.printf("[Face] created metadata file at %s\n", kFaceMetadataPrimaryPath);
+            Serial.printf("[SCAN] created metadata file at %s\n", kFaceMetadataPrimaryPath);
         }
     }
     return true;
+#endif
 }
 
 bool FaceEngine::loadAnimationMetadata() {
+#if VECTOR_ONLY_FACE
+    return true;
+#else
     if (!SdManager::isMounted()) {
         return false;
     }
@@ -1737,6 +1991,7 @@ bool FaceEngine::loadAnimationMetadata() {
     }
 
     return true;
+#endif
 }
 
 bool FaceEngine::triggerPlayback(const String& styleName, const String& animationName, bool interruptCurrent) {
@@ -1758,7 +2013,7 @@ bool FaceEngine::triggerPlayback(const String& styleName, const String& animatio
     }
 
     if (xQueueSend(gPlaybackQueue, &request, 0) != pdTRUE) {
-        Serial.println("[Face] playback queue full; dropping request");
+        Serial.println("[PLAY] playback queue full; dropping request");
         return false;
     }
     return true;
@@ -1768,38 +2023,48 @@ FaceEngine::FrameSequence FaceEngine::resolveSequence(const String& styleName, c
     const String normalizedStyle = normalizeName(styleName);
     const String normalizedAnimation = normalizeName(animationName);
 
-    for (const FrameSequence& sequence : index_) {
-        if (sequence.style == normalizedStyle && sequence.animation == normalizedAnimation) {
-            return sequence;
-        }
+    FrameSequence sequence;
+    sequence.style = normalizedStyle.length() > 0 ? normalizedStyle : String(kDefaultStyle);
+    sequence.animation = normalizedAnimation.length() > 0 ? normalizedAnimation : String(kDefaultAnimation);
+    FrameAsset vectorFrame;
+    vectorFrame.path = "vector://" + sequence.animation;
+    sequence.frames.push_back(vectorFrame);
+
+    const AnimationDefinition* definition = definitionFor(sequence.animation);
+    if (definition != nullptr) {
+        sequence.frameDelayMs = definition->frameTimeMs;
+        sequence.curve = definition->curve;
+        sequence.glowMultiplier = definition->glowMultiplier;
+        sequence.glowVariationPercent = definition->glowVariationPercent;
+        sequence.slowPulse = definition->slowPulse;
+        sequence.dynamicSpeaking = definition->dynamicSpeaking;
+        sequence.glowSpike = definition->glowSpike;
     }
 
-    if (normalizedStyle != kDefaultStyle) {
-        for (const FrameSequence& sequence : index_) {
-            if (sequence.style == kDefaultStyle && sequence.animation == normalizedAnimation) {
-                return sequence;
-            }
-        }
-    }
-
-    return resolveFallbackSequence(normalizedAnimation);
+    return sequence;
 }
 
 FaceEngine::FrameSequence FaceEngine::resolveFallbackSequence(const String& animationName) const {
     const String normalizedAnimation = normalizeName(animationName);
-    for (const FrameSequence& sequence : index_) {
-        if (sequence.style == kDefaultStyle && sequence.animation == normalizedAnimation) {
-            return sequence;
-        }
+    FrameSequence sequence;
+    sequence.style = kDefaultStyle;
+    sequence.animation = normalizedAnimation.length() > 0 ? normalizedAnimation : String(kDefaultAnimation);
+    FrameAsset vectorFrame;
+    vectorFrame.path = "vector://" + sequence.animation;
+    sequence.frames.push_back(vectorFrame);
+
+    const AnimationDefinition* definition = definitionFor(sequence.animation);
+    if (definition != nullptr) {
+        sequence.frameDelayMs = definition->frameTimeMs;
+        sequence.curve = definition->curve;
+        sequence.glowMultiplier = definition->glowMultiplier;
+        sequence.glowVariationPercent = definition->glowVariationPercent;
+        sequence.slowPulse = definition->slowPulse;
+        sequence.dynamicSpeaking = definition->dynamicSpeaking;
+        sequence.glowSpike = definition->glowSpike;
     }
 
-    for (const FrameSequence& sequence : index_) {
-        if (sequence.style == kDefaultStyle && sequence.animation == kDefaultAnimation) {
-            return sequence;
-        }
-    }
-
-    return FrameSequence{};
+    return sequence;
 }
 
 String FaceEngine::normalizeName(const String& value) const {
@@ -1980,6 +2245,12 @@ uint16_t FaceEngine::frameDelayFor(const FrameSequence& sequence, size_t frameIn
     if (delay < 16.0f) {
         delay = 16.0f;
     }
+#if VECTOR_ONLY_FACE
+    // Keep vector motion smooth regardless of legacy metadata pacing.
+    if (delay > 40.0f) {
+        delay = 40.0f;
+    }
+#endif
     delay *= transitionSpeedScaleForCurrentPersonality();
     if (delay < 16.0f) {
         delay = 16.0f;
@@ -1990,6 +2261,10 @@ uint16_t FaceEngine::frameDelayFor(const FrameSequence& sequence, size_t frameIn
 FaceEngine::FrameAsset FaceEngine::loadFrameAsset(const String& framePath) const {
     FrameAsset asset;
     asset.path = framePath;
+
+#if VECTOR_ONLY_FACE
+    return asset;
+#else
 
     if (!SdManager::isMounted()) {
         return asset;
@@ -2018,13 +2293,20 @@ FaceEngine::FrameAsset FaceEngine::loadFrameAsset(const String& framePath) const
 
     file.close();
     return asset;
+#endif
 }
 
 String FaceEngine::framePathFromEntry(const String& styleName, const String& animationName, const String& fileName) const {
+#if VECTOR_ONLY_FACE
+    (void)styleName;
+    (void)animationName;
+    return "vector://" + normalizeName(fileName);
+#else
     if (fileName.startsWith("/")) {
         return fileName;
     }
     return String(kFaceRoot) + "/" + styleName + "/" + animationName + "/" + fileName;
+#endif
 }
 
 String FaceEngine::styleDisplayName(const String& styleName) const {
@@ -2047,60 +2329,12 @@ String FaceEngine::timingCurveName(TimingCurve curve) const {
 }
 
 void FaceEngine::renderFrame(const FrameAsset& frame, int yOffsetPx, bool forceRedraw) const {
-    if (!SdManager::isMounted() || frame.path.length() == 0) {
-        return;
-    }
-
-    const int frameNumber = frameNumberFromName(frame.path);
-    if (!forceRedraw && frame.path == lastRenderedFramePath_) {
-        return;
-    }
-
-    const_cast<FaceEngine*>(this)->lastRenderedFramePath_ = frame.path;
-    const_cast<FaceEngine*>(this)->lastRenderedFrameNumber_ = frameNumber;
-
-    auto& display = M5.Display;
-    constexpr int kFrameWidthPx = 240;
-    constexpr int kFrameHeightPx = 240;
-    const int xOffsetPx = display.width() > kFrameWidthPx ? (display.width() - kFrameWidthPx) / 2 : 0;
-    const int yBasePx = display.height() > kFrameHeightPx ? (display.height() - kFrameHeightPx) / 2 : 0;
-    const int yOffsetClamped = yOffsetPx < -8 ? -8 : (yOffsetPx > 8 ? 8 : yOffsetPx);
-    const int drawY = yBasePx + yOffsetClamped;
-    const int clearY = yBasePx - 8;
-    const int clearHeight = kFrameHeightPx + 16;
-    waitForDisplayReady(display);
-    display.startWrite();
-    display.fillRect(xOffsetPx, clearY, kFrameWidthPx, clearHeight, TFT_BLACK);
-
-    if (frame.cached && !frame.bytes.empty()) {
-        display.drawPng(frame.bytes.data(), frame.bytes.size(), xOffsetPx, drawY);
-        display.endWrite();
-        return;
-    }
-
-    File file = SD.open(frame.path);
-    if (!file) {
-        display.endWrite();
-        return;
-    }
-
-    const size_t size = file.size();
-    if (size == 0 || size > kStreamFrameMaxBytes) {
-        file.close();
-        display.endWrite();
-        return;
-    }
-
-    if (streamBuffer_.size() < size) {
-        const_cast<FaceEngine*>(this)->streamBuffer_.resize(size);
-    }
-    const size_t bytesRead = file.read(const_cast<FaceEngine*>(this)->streamBuffer_.data(), size);
-    file.close();
-    if (bytesRead == size) {
-        display.drawPng(const_cast<FaceEngine*>(this)->streamBuffer_.data(), size, xOffsetPx, drawY);
-    }
-
-    display.endWrite();
+    (void)frame;
+    (void)yOffsetPx;
+    (void)forceRedraw;
+    MicroExpressionFrame microFrame;
+    const PersonalityProfile profile = personalityStateMachine_.profile();
+    renderVectorFace(microFrame, profile);
 }
 
 bool FaceEngine::ensureBlendBuffers() const {
@@ -2142,55 +2376,9 @@ bool FaceEngine::ensureBlendBuffers() const {
 }
 
 bool FaceEngine::decodeFrameToBuffer(const FrameAsset& frame, uint16_t* output, size_t pixelCount) const {
-    if (output == nullptr || frame.path.length() == 0 || !SdManager::isMounted()) {
-        return false;
-    }
-
-    const uint8_t* pngData = nullptr;
-    size_t pngSize = 0;
-
-    if (frame.cached && !frame.bytes.empty()) {
-        pngData = frame.bytes.data();
-        pngSize = frame.bytes.size();
-    } else {
-        File file = SD.open(frame.path);
-        if (!file) {
-            return false;
-        }
-        const size_t size = file.size();
-        if (size == 0 || size > kStreamFrameMaxBytes) {
-            file.close();
-            return false;
-        }
-        if (streamBuffer_.size() < size) {
-            const_cast<FaceEngine*>(this)->streamBuffer_.resize(size);
-        }
-        const size_t bytesRead = file.read(const_cast<FaceEngine*>(this)->streamBuffer_.data(), size);
-        file.close();
-        if (bytesRead != size) {
-            return false;
-        }
-        pngData = const_cast<FaceEngine*>(this)->streamBuffer_.data();
-        pngSize = size;
-    }
-
-    LGFX_Sprite sprite(&M5.Display);
-    sprite.setColorDepth(16);
-    sprite.setPsram(true);
-    if (sprite.createSprite(kExpectedFrameWidth, kExpectedFrameHeight) == nullptr) {
-        return false;
-    }
-
-    sprite.fillSprite(0);
-    sprite.drawPng(pngData, pngSize, 0, 0);
-    const uint16_t* spritePixels = static_cast<const uint16_t*>(sprite.getBuffer());
-    if (spritePixels == nullptr) {
-        sprite.deleteSprite();
-        return false;
-    }
-
-    std::memcpy(output, spritePixels, pixelCount * sizeof(uint16_t));
-    sprite.deleteSprite();
+    (void)frame;
+    (void)output;
+    (void)pixelCount;
     return true;
 }
 
@@ -2201,75 +2389,16 @@ void FaceEngine::drawBlendedFrame(const FrameAsset& fromFrame,
                                   const String& dissolveSeed,
                                   int yOffsetPx,
                                   bool forceRedraw) const {
-    if (!ensureBlendBuffers()) {
-        auto* owner = const_cast<FaceEngine*>(this);
-        ++owner->telemetryBlendFallbacks_;
-        renderFrame(toFrame, yOffsetPx, forceRedraw);
-        return;
-    }
-
-    const float clampedWeight = weight < 0.0f ? 0.0f : (weight > 1.0f ? 1.0f : weight);
-    const uint32_t progressKey = static_cast<uint32_t>(clampedWeight * 1000.0f);
-    const String blendKey = fromFrame.path + "->" + toFrame.path + "@" + String(progressKey);
-    if (!forceRedraw && blendKey == lastRenderedFramePath_) {
-        return;
-    }
-
-    auto* owner = const_cast<FaceEngine*>(this);
-    owner->lastRenderedFramePath_ = blendKey;
-    owner->lastRenderedFrameNumber_ = frameNumberFromName(toFrame.path);
-
-    if (!decodeFrameToBuffer(fromFrame, blendFrameFrom_, blendPixelCount_) ||
-        !decodeFrameToBuffer(toFrame, blendFrameTo_, blendPixelCount_)) {
-        ++owner->telemetryBlendFallbacks_;
-        renderFrame(toFrame, yOffsetPx, true);
-        return;
-    }
-
-    float blendWeight = clampedWeight;
-    if (mode == EmotionBlendEngine::Mode::Morph) {
-        blendWeight = blendWeight * blendWeight * (3.0f - 2.0f * blendWeight);
-    }
-    const uint16_t blendFixed = static_cast<uint16_t>(blendWeight * 256.0f + 0.5f);
-    const uint32_t seed = hashString(dissolveSeed);
-
-    for (size_t index = 0; index < blendPixelCount_; ++index) {
-        const uint16_t source = blendFrameFrom_[index];
-        const uint16_t target = blendFrameTo_[index];
-
-        if (mode == EmotionBlendEngine::Mode::Dissolve) {
-            const uint32_t pixelHash = static_cast<uint32_t>(index * 2654435761u) ^ seed;
-            const uint16_t threshold = static_cast<uint16_t>(pixelHash & 0xFFu);
-            const uint16_t limit = static_cast<uint16_t>(blendWeight * 255.0f);
-            blendFrameTo_[index] = (threshold <= limit) ? target : source;
-            continue;
-        }
-
-        const uint16_t srcR = (source >> 11) & 0x1Fu;
-        const uint16_t srcG = (source >> 5) & 0x3Fu;
-        const uint16_t srcB = source & 0x1Fu;
-
-        const uint16_t dstR = (target >> 11) & 0x1Fu;
-        const uint16_t dstG = (target >> 5) & 0x3Fu;
-        const uint16_t dstB = target & 0x1Fu;
-
-        const uint16_t outR = static_cast<uint16_t>((srcR * (256u - blendFixed) + dstR * blendFixed) >> 8);
-        const uint16_t outG = static_cast<uint16_t>((srcG * (256u - blendFixed) + dstG * blendFixed) >> 8);
-        const uint16_t outB = static_cast<uint16_t>((srcB * (256u - blendFixed) + dstB * blendFixed) >> 8);
-
-        blendFrameTo_[index] = static_cast<uint16_t>((outR << 11) | (outG << 5) | outB);
-    }
-
-    auto& display = M5.Display;
-    const int xOffsetPx = display.width() > kExpectedFrameWidth ? (display.width() - kExpectedFrameWidth) / 2 : 0;
-    const int yBasePx = display.height() > kExpectedFrameHeight ? (display.height() - kExpectedFrameHeight) / 2 : 0;
-    const int yOffsetClamped = yOffsetPx < -8 ? -8 : (yOffsetPx > 8 ? 8 : yOffsetPx);
-    const int drawY = yBasePx + yOffsetClamped;
-
-    waitForDisplayReady(display);
-    display.startWrite();
-    display.pushImage(xOffsetPx, drawY, kExpectedFrameWidth, kExpectedFrameHeight, blendFrameTo_);
-    display.endWrite();
+    (void)fromFrame;
+    (void)toFrame;
+    (void)weight;
+    (void)mode;
+    (void)dissolveSeed;
+    (void)yOffsetPx;
+    (void)forceRedraw;
+    MicroExpressionFrame microFrame;
+    const PersonalityProfile profile = personalityStateMachine_.profile();
+    renderVectorFace(microFrame, profile);
 }
 
 void FaceEngine::noteFrameTelemetry(bool blended, uint32_t drawUs, uint16_t frameBudgetMs, bool overBudget) {
@@ -2373,6 +2502,7 @@ void FaceEngine::renderFaceWindowBlack(uint8_t level) const {
 }
 
 void FaceEngine::renderGlowOverlay(const FrameSequence& sequence, float normalizedFrame, float amplitude) const {
+    return; // disable glow overlay
     auto& display = M5.Display;
     const int centerX = display.width() / 2;
     const int centerY = display.height() / 2;
@@ -2422,6 +2552,16 @@ void FaceEngine::renderGlowOverlay(const FrameSequence& sequence, float normaliz
 }
 
 void FaceEngine::finishPlayback() {
+    if (shouldReturnToIdleAfterPlayback()) {
+        transitionToIdlePending_ = false;
+        if (triggerPlayback(activeStyle_, kDefaultAnimation)) {
+            activeAnimation_ = kDefaultAnimation;
+            activeEmotion_ = kDefaultAnimation;
+            playing_ = true;
+            return;
+        }
+    }
+
     const String personalityIdle = personalityStateMachine_.profile().idleAnimation;
     String loopEmotion = activeEmotion_;
     if (!isEmotionAvailable(loopEmotion)) {
@@ -2442,7 +2582,11 @@ bool FaceEngine::shouldIdleTrigger() const {
 }
 
 String FaceEngine::stylePath(const String& styleName) const {
+#if VECTOR_ONLY_FACE
+    return "vector://style/" + normalizeName(styleName);
+#else
     return String(kFaceRoot) + "/" + normalizeName(styleName);
+#endif
 }
 
 const FaceEngine::AnimationDefinition* FaceEngine::definitionFor(const String& animationName) const {
@@ -2460,9 +2604,6 @@ bool FaceEngine::shouldReturnToIdleAfterPlayback() const {
         return false;
     }
     if (emotionBlendEngine_.isActive(millis())) {
-        return false;
-    }
-    if (activeEmotion_ == "speaking" || activeEmotion_ == "listening" || activeEmotion_ == "thinking") {
         return false;
     }
     return true;
@@ -2497,8 +2638,287 @@ MicroExpressionFrame FaceEngine::updateMicroExpressions(unsigned long nowMs,
     MicroExpressionFrame frame = microExpressionEngine_.update(nowMs, deltaSeconds, blendEmotion, personalityProfile);
     frame.eyeJitterX = static_cast<int8_t>(frame.eyeJitterX * adaptiveModifiers_.jitterScale);
     frame.eyeJitterY = static_cast<int8_t>(frame.eyeJitterY * adaptiveModifiers_.jitterScale);
+    frame.eyeJitterX = static_cast<int8_t>(frame.eyeJitterX + static_cast<int8_t>(eyeDriftX_ * 0.35f));
+    frame.eyeJitterY = static_cast<int8_t>(frame.eyeJitterY + static_cast<int8_t>(eyeDriftY_ * 0.35f));
+    frame.driftX = static_cast<int8_t>(frame.driftX + static_cast<int8_t>(eyeDriftX_ * 0.5f));
+    frame.driftY = static_cast<int8_t>(frame.driftY + static_cast<int8_t>(eyeDriftY_ * 0.5f));
+    if (blinkActive_ || sleepyHalfBlinkActive_) {
+        frame.blink = true;
+    }
+    if (eyebrowFlickActive_) {
+        frame.eyelidTwitch = true;
+    }
     frame.pupilScale *= adaptiveModifiers_.pupilScale;
     return frame;
+}
+
+FaceEngine::EmotionParameters FaceEngine::emotionParametersFor(const String& emotionName) const {
+    struct EmotionEntry {
+        const char* emotion;
+        EmotionParameters parameters;
+    };
+
+    const auto makeParams = [](float eyebrowAngle,
+                               float eyebrowHeight,
+                               float eyeSquish,
+                               float pupilJitter,
+                               float mouthCurve,
+                               float mouthOpen,
+                               float glowIntensity,
+                               float microExpressionBias) {
+        EmotionParameters params;
+        params.eyebrowAngle = eyebrowAngle;
+        params.eyebrowHeight = eyebrowHeight;
+        params.eyeSquish = eyeSquish;
+        params.pupilJitter = pupilJitter;
+        params.mouthCurve = mouthCurve;
+        params.mouthOpen = mouthOpen;
+        params.glowIntensity = glowIntensity;
+        params.microExpressionBias = microExpressionBias;
+        return params;
+    };
+
+    static const EmotionEntry kEmotionTable[] = {
+        {"neutral", makeParams(0.0f, 0.0f, 1.0f, 0.45f, 0.0f, 0.05f, 0.35f, 0.45f)},
+        {"happy", makeParams(6.0f, 2.0f, 1.0f, 0.55f, 0.9f, 0.35f, 0.60f, 0.70f)},
+        {"curious", makeParams(8.0f, 4.0f, 0.95f, 0.80f, 0.20f, 0.18f, 0.62f, 0.82f)},
+        {"confused", makeParams(-4.0f, 3.0f, 0.92f, 0.65f, -0.20f, 0.25f, 0.48f, 0.72f)},
+        {"excited", makeParams(10.0f, 6.0f, 0.90f, 0.90f, 0.85f, 0.45f, 0.85f, 0.92f)},
+        {"sleepy", makeParams(-8.0f, -3.0f, 0.68f, 0.25f, -0.45f, 0.05f, 0.24f, 0.22f)},
+        {"mischievous", makeParams(7.0f, 3.0f, 0.95f, 0.88f, 0.50f, 0.22f, 0.78f, 0.88f)},
+        {"focused", makeParams(4.0f, -2.0f, 0.88f, 0.35f, -0.08f, 0.10f, 0.42f, 0.36f)},
+    };
+
+    const String normalized = normalizeName(emotionName);
+    for (size_t index = 0; index < (sizeof(kEmotionTable) / sizeof(kEmotionTable[0])); ++index) {
+        if (normalized == kEmotionTable[index].emotion) {
+            return kEmotionTable[index].parameters;
+        }
+    }
+    return kEmotionTable[0].parameters;
+}
+
+void FaceEngine::updatePersonality(float deltaSeconds) {
+    if (deltaSeconds < 0.001f) {
+        deltaSeconds = 0.001f;
+    }
+
+    const unsigned long nowMs = millis();
+    String targetEmotion = normalizeName(activeEmotion_);
+    if (targetEmotion.length() == 0 || targetEmotion == "idle" || targetEmotion == "calm") {
+        targetEmotion = "neutral";
+    }
+    if (targetEmotion == "surprised") {
+        targetEmotion = "confused";
+    }
+    if (targetEmotion == "thinking") {
+        targetEmotion = "focused";
+    }
+
+    if (proceduralCurrentEmotion_.length() == 0) {
+        proceduralCurrentEmotion_ = "neutral";
+    }
+    if (proceduralTargetEmotion_.length() == 0) {
+        proceduralTargetEmotion_ = proceduralCurrentEmotion_;
+    }
+
+    if (targetEmotion != proceduralTargetEmotion_) {
+        if (proceduralEmotionBlend_ >= 1.0f) {
+            proceduralCurrentEmotion_ = proceduralTargetEmotion_;
+        }
+        proceduralTargetEmotion_ = targetEmotion;
+        proceduralEmotionBlend_ = 0.0f;
+    }
+
+    const float expressiveBlendSpeed = 2.6f * personalityExpressivenessScale_;
+    proceduralEmotionBlend_ += deltaSeconds * expressiveBlendSpeed;
+    if (proceduralEmotionBlend_ > 1.0f) {
+        proceduralEmotionBlend_ = 1.0f;
+        proceduralCurrentEmotion_ = proceduralTargetEmotion_;
+    }
+
+    const String mood = normalizeName(getMood());
+    if (mood == "curious" || mood == "happy") {
+        curiosityMode_ = CuriosityMode::Active;
+    } else {
+        curiosityMode_ = CuriosityMode::Soft;
+    }
+
+    if (nowMs > mischiefCooldownUntilMs_ && !mood.equals("tired") && !mood.equals("sleepy")) {
+        const bool triggerEvent = random(0, 1000) < 2;
+        if (triggerEvent) {
+            curiosityMode_ = CuriosityMode::Mischievous;
+            proceduralTargetEmotion_ = "mischievous";
+            proceduralEmotionBlend_ = 0.0f;
+            mischiefCooldownUntilMs_ = nowMs + 38000UL;
+            glowPulseActive_ = true;
+            glowPulseEndMs_ = nowMs + 600UL;
+            cuteExpressionActive_ = true;
+            mouthTwitchActive_ = true;
+            mouthTwitchEndMs_ = nowMs + 140UL;
+        }
+    }
+
+    if (nowMs >= nextIdleLookMs_) {
+        eyeDriftTargetX_ = static_cast<float>(random(-8, 9));
+        eyeDriftTargetY_ = static_cast<float>(random(-5, 6));
+        nextIdleLookMs_ = nowMs + static_cast<unsigned long>(1200 + random(0, 2400));
+
+        if (targetEmotion == "curious" || curiosityMode_ != CuriosityMode::Soft) {
+            eyebrowFlickActive_ = true;
+            eyebrowFlickEndMs_ = nowMs + static_cast<unsigned long>(100 + random(0, 51));
+        }
+    }
+
+    const float driftEase = 3.2f * deltaSeconds;
+    eyeDriftX_ += (eyeDriftTargetX_ - eyeDriftX_) * driftEase;
+    eyeDriftY_ += (eyeDriftTargetY_ - eyeDriftY_) * driftEase;
+
+    const float microBias = emotionParametersFor(proceduralTargetEmotion_).microExpressionBias;
+    const float moodScale = (mood == "sleepy" || mood == "tired") ? 1.35f : ((mood == "happy" || mood == "curious") ? 0.75f : 1.0f);
+    const unsigned long cadenceMs = static_cast<unsigned long>((700.0f + (1.0f - microBias) * 900.0f) * moodScale * personalityCadenceScale_);
+    if (nowMs >= nextMicroEventMs_) {
+        const int roll = random(0, 100);
+        if (roll < 32) {
+            blinkActive_ = true;
+            fastBlinkActive_ = random(0, 100) < 40;
+            blinkEndMs_ = nowMs + static_cast<unsigned long>(fastBlinkActive_ ? 80 : (140 + random(0, 90)));
+            doubleBlinkPending_ = random(0, 100) < 24;
+        } else if (roll < 50) {
+            eyebrowFlickActive_ = true;
+            eyebrowFlickEndMs_ = nowMs + static_cast<unsigned long>(100 + random(0, 51));
+        } else if (roll < 64) {
+            mouthTwitchActive_ = true;
+            mouthTwitchEndMs_ = nowMs + static_cast<unsigned long>(90 + random(0, 71));
+            mouthTwitchOffset_ = static_cast<float>(random(-18, 19)) / 100.0f;
+        } else if (roll < 76) {
+            headTiltActive_ = true;
+            headTiltOffset_ = static_cast<float>(random(-10, 11)) / 10.0f;
+            headTiltEndMs_ = nowMs + static_cast<unsigned long>(220 + random(0, 220));
+        } else if (roll < 88) {
+            glowPulseActive_ = true;
+            glowPulseBoost_ = 0.28f + static_cast<float>(random(0, 28)) / 100.0f;
+            glowPulseEndMs_ = nowMs + static_cast<unsigned long>(180 + random(0, 240));
+        } else {
+            cuteExpressionActive_ = true;
+            sleepyHalfBlinkActive_ = (targetEmotion == "sleepy") || (mood == "sleepy" && random(0, 100) < 70);
+            if (sleepyHalfBlinkActive_) {
+                sleepyHalfBlinkEndMs_ = nowMs + static_cast<unsigned long>(220 + random(0, 210));
+            }
+        }
+        nextMicroEventMs_ = nowMs + cadenceMs;
+    }
+
+    if (blinkActive_ && nowMs >= blinkEndMs_) {
+        blinkActive_ = false;
+        if (doubleBlinkPending_) {
+            blinkActive_ = true;
+            fastBlinkActive_ = true;
+            blinkEndMs_ = nowMs + 95UL;
+            doubleBlinkPending_ = false;
+        }
+    }
+
+    if (eyebrowFlickActive_ && nowMs >= eyebrowFlickEndMs_) {
+        eyebrowFlickActive_ = false;
+    }
+    if (mouthTwitchActive_ && nowMs >= mouthTwitchEndMs_) {
+        mouthTwitchActive_ = false;
+        mouthTwitchOffset_ *= 0.5f;
+    }
+    if (headTiltActive_ && nowMs >= headTiltEndMs_) {
+        headTiltActive_ = false;
+        headTiltOffset_ *= 0.65f;
+    }
+    if (glowPulseActive_ && nowMs >= glowPulseEndMs_) {
+        glowPulseActive_ = false;
+        glowPulseBoost_ *= 0.6f;
+    }
+    if (sleepyHalfBlinkActive_ && nowMs >= sleepyHalfBlinkEndMs_) {
+        sleepyHalfBlinkActive_ = false;
+    }
+
+    if (curiosityMode_ != CuriosityMode::Mischievous) {
+        cuteExpressionActive_ = (nowMs % 18000UL) < 400UL;
+    }
+}
+
+void FaceEngine::applyPersonalityToFace(FaceState& state) const {
+    const float expressiveScale = 1.28f * personalityExpressivenessScale_;
+    state.eyebrowAngle *= expressiveScale;
+    state.eyebrowHeight *= expressiveScale;
+    state.mouthCurve *= expressiveScale;
+    state.pupilJitter *= expressiveScale;
+    state.microExpressionBias *= expressiveScale;
+
+    if (curiosityMode_ == CuriosityMode::Active) {
+        state.pupilJitter += 0.28f;
+        state.eyebrowHeight += 0.9f;
+        state.glowIntensity += 0.10f;
+    } else if (curiosityMode_ == CuriosityMode::Mischievous) {
+        state.mouthCurve += 0.35f;
+        state.eyebrowAngle += 4.0f;
+        state.glowIntensity += 0.22f;
+    }
+
+    if (cuteExpressionActive_) {
+        state.mouthOpen += 0.08f;
+        state.mouthCurve += 0.18f;
+    }
+
+    if (eyebrowFlickActive_) {
+        state.eyebrowHeight += 2.5f;
+    }
+    if (mouthTwitchActive_) {
+        state.mouthCurve += mouthTwitchOffset_;
+    }
+    if (headTiltActive_) {
+        state.headTilt += headTiltOffset_;
+    }
+    if (glowPulseActive_) {
+        state.glowIntensity += glowPulseBoost_;
+    }
+    if (sleepyHalfBlinkActive_) {
+        state.halfBlink = true;
+        if (state.blinkClosure < 0.55f) {
+            state.blinkClosure = 0.55f;
+        }
+    }
+
+    if (state.glowIntensity < 0.1f) {
+        state.glowIntensity = 0.1f;
+    }
+    if (state.glowIntensity > 1.35f) {
+        state.glowIntensity = 1.35f;
+    }
+}
+
+FaceEngine::FaceState FaceEngine::composeProceduralFaceState(const MicroExpressionFrame& microFrame,
+                                                             const PersonalityProfile& personalityProfile) const {
+    const EmotionParameters from = emotionParametersFor(proceduralCurrentEmotion_);
+    const EmotionParameters to = emotionParametersFor(proceduralTargetEmotion_);
+    const float t = proceduralEmotionBlend_ < 0.0f ? 0.0f : (proceduralEmotionBlend_ > 1.0f ? 1.0f : proceduralEmotionBlend_);
+
+    auto blend = [t](float a, float b) {
+        return a + (b - a) * t;
+    };
+
+    FaceState state;
+    state.eyebrowAngle = blend(from.eyebrowAngle, to.eyebrowAngle);
+    state.eyebrowHeight = blend(from.eyebrowHeight, to.eyebrowHeight);
+    state.eyeSquish = blend(from.eyeSquish, to.eyeSquish);
+    state.pupilJitter = blend(from.pupilJitter, to.pupilJitter);
+    state.mouthCurve = blend(from.mouthCurve, to.mouthCurve);
+    state.mouthOpen = blend(from.mouthOpen, to.mouthOpen);
+    state.glowIntensity = blend(from.glowIntensity, to.glowIntensity) * (0.85f + personalityProfile.microExpressionScale * 0.35f);
+    state.microExpressionBias = blend(from.microExpressionBias, to.microExpressionBias);
+    state.headTilt = 0.0f;
+    state.blinkClosure = blinkActive_ ? 1.0f : 0.0f;
+    state.eyeDriftX = static_cast<int>(eyeDriftX_ + microFrame.driftX);
+    state.eyeDriftY = static_cast<int>(eyeDriftY_ + microFrame.driftY);
+    state.halfBlink = sleepyHalfBlinkActive_;
+    applyPersonalityToFace(state);
+    return state;
 }
 
 void FaceEngine::updatePersonality(unsigned long nowMs, const EmotionBlendEngine::Snapshot& blendSnapshot, const String& emotionName) {
@@ -2563,36 +2983,192 @@ void FaceEngine::drawFrame(const FrameSequence& sequence,
         return;
     }
 
-    const size_t safeIndex = frameIndex >= sequence.frames.size() ? (sequence.frames.size() - 1) : frameIndex;
-    const int renderYOffset = yOffsetPx + renderYOffsetFor(microFrame, personalityProfile);
+    (void)sequence;
+    (void)frameIndex;
+    (void)blendSnapshot;
+    (void)yOffsetPx;
+    (void)forceRedraw;
+    (void)blendSourceSequence;
+    (void)blendSourceFrameIndex;
+    renderVectorFace(microFrame, personalityProfile);
+}
 
-    if (blendSnapshot.active && blendSourceSequence != nullptr && !blendSourceSequence->frames.empty()) {
-        const size_t safeSourceIndex = blendSourceFrameIndex >= blendSourceSequence->frames.size()
-                                           ? (blendSourceSequence->frames.size() - 1)
-                                           : blendSourceFrameIndex;
-        drawBlendedFrame(blendSourceSequence->frames[safeSourceIndex],
-                         sequence.frames[safeIndex],
-                         blendSnapshot.weight,
-                         blendSnapshot.mode,
-                         blendSnapshot.fromEmotion + "|" + blendSnapshot.toEmotion + "|" + String(safeIndex),
-                         renderYOffset,
-                         forceRedraw);
+void FaceEngine::renderVectorFace(const MicroExpressionFrame& microFrame, const PersonalityProfile&) const {
+    auto& display = M5.Display;
+    constexpr bool kUseFrameSprite = true;
+    const int centerX = display.width() / 2;
+    const int centerY = display.height() / 2;
+
+    const String emotion = normalizeName(activeEmotion_);
+    const uint16_t bgColor = display.color565(0, 0, 0);
+    const uint16_t eyeColor = display.color565(245, 245, 245);
+    const uint16_t accentColor = display.color565(200, 220, 255);
+    const uint16_t glowWhite = display.color565(255, 255, 255);
+    const uint16_t glowCyan = display.color565(120, 240, 255);
+
+    const PersonalityProfile profile = personalityStateMachine_.profile();
+    const FaceState state = composeProceduralFaceState(microFrame, profile);
+
+    const int eyeOffsetX = 42 + static_cast<int>(state.headTilt * 0.3f);
+    const int eyeY = centerY - 24 + state.eyeDriftY;
+    const int eyeRadiusX = 12;
+    int eyeRadiusY = static_cast<int>(12.0f * state.eyeSquish);
+    if (eyeRadiusY < 5) {
+        eyeRadiusY = 5;
+    }
+    const int jitterX = microFrame.eyeJitterX + static_cast<int>(state.pupilJitter * std::sin(timeAccumulator_ * 2.2f));
+    const int jitterY = microFrame.eyeJitterY + static_cast<int>(state.pupilJitter * std::cos(timeAccumulator_ * 1.8f));
+    const int faceBoxW = 224;
+    const int faceBoxH = 172;
+    const int faceBoxX = centerX - (faceBoxW / 2);
+    const int faceBoxY = centerY - 96;
+    const int browY = eyeY - 21 - static_cast<int>(state.eyebrowHeight);
+    const int browTilt = static_cast<int>(state.eyebrowAngle);
+    const int mouthY = centerY + 34 + static_cast<int>(state.headTilt * 0.2f);
+    const bool eyesClosed = microFrame.blink || state.blinkClosure >= 0.85f;
+    const bool eyesHalfClosed = state.halfBlink;
+
+    static LGFX_Sprite frameSprite(&display);
+    static bool spriteInitialized = false;
+    static bool spritePrimed = false;
+    static int spriteWidth = 0;
+    static int spriteHeight = 0;
+
+    const int displayWidth = display.width();
+    const int displayHeight = display.height();
+    const bool spriteSizeChanged = spriteWidth != displayWidth || spriteHeight != displayHeight;
+    if (spriteSizeChanged) {
+        if (spriteInitialized) {
+            frameSprite.deleteSprite();
+            spriteInitialized = false;
+        }
+        frameSprite.setColorDepth(16);
+        frameSprite.setPsram(true);
+        spriteInitialized = frameSprite.createSprite(displayWidth, displayHeight) != nullptr;
+        if (spriteInitialized) {
+            frameSprite.fillSprite(TFT_BLACK);
+            spritePrimed = true;
+        } else {
+            spritePrimed = false;
+        }
+        spriteWidth = displayWidth;
+        spriteHeight = displayHeight;
+    }
+
+    if (kUseFrameSprite && spriteInitialized) {
+        if (!spritePrimed) {
+            frameSprite.fillSprite(TFT_BLACK);
+            spritePrimed = true;
+        }
+        frameSprite.fillSprite(TFT_BLACK);
+        frameSprite.fillRect(faceBoxX, faceBoxY, faceBoxW, faceBoxH, bgColor);
+
+        if (eyesClosed) {
+            frameSprite.drawFastHLine(centerX - eyeOffsetX - eyeRadiusX, eyeY, eyeRadiusX * 2, eyeColor);
+            frameSprite.drawFastHLine(centerX + eyeOffsetX - eyeRadiusX, eyeY, eyeRadiusX * 2, eyeColor);
+        } else if (eyesHalfClosed) {
+            frameSprite.fillRoundRect(centerX - eyeOffsetX - eyeRadiusX, eyeY - 2, eyeRadiusX * 2, 5, 2, eyeColor);
+            frameSprite.fillRoundRect(centerX + eyeOffsetX - eyeRadiusX, eyeY - 2, eyeRadiusX * 2, 5, 2, eyeColor);
+        } else {
+            frameSprite.fillRoundRect(centerX - eyeOffsetX - eyeRadiusX + jitterX,
+                                      eyeY - eyeRadiusY + jitterY,
+                                      eyeRadiusX * 2,
+                                      eyeRadiusY * 2,
+                                      eyeRadiusY,
+                                      eyeColor);
+            frameSprite.fillRoundRect(centerX + eyeOffsetX - eyeRadiusX - jitterX,
+                                      eyeY - eyeRadiusY - jitterY,
+                                      eyeRadiusX * 2,
+                                      eyeRadiusY * 2,
+                                      eyeRadiusY,
+                                      eyeColor);
+        }
+
+        frameSprite.drawLine(centerX - eyeOffsetX - 14, browY + browTilt,
+                             centerX - eyeOffsetX + 14, browY - browTilt, accentColor);
+        frameSprite.drawLine(centerX + eyeOffsetX - 14, browY - browTilt,
+                             centerX + eyeOffsetX + 14, browY + browTilt, accentColor);
+
+        if (state.mouthOpen > 0.35f) {
+            const int openR = 7 + static_cast<int>(state.mouthOpen * 8.0f);
+            frameSprite.drawCircle(centerX, mouthY, openR, accentColor);
+        } else if (state.mouthCurve > 0.22f || emotion == "happy") {
+            frameSprite.drawCircle(centerX, mouthY, 12, accentColor);
+            frameSprite.fillRect(centerX - 14, mouthY - 12, 28, 12, bgColor);
+        } else if (state.mouthCurve < -0.18f || emotion == "sleepy" || emotion == "confused") {
+            frameSprite.drawCircle(centerX, mouthY + 12, 10, accentColor);
+            frameSprite.fillRect(centerX - 12, mouthY + 12, 24, 12, bgColor);
+        } else {
+            frameSprite.drawFastHLine(centerX - 18, mouthY, 36, accentColor);
+        }
+
+        if (microFrame.eyelidTwitch) {
+            frameSprite.drawPixel(centerX - eyeOffsetX + 16, eyeY - 6, accentColor);
+            frameSprite.drawPixel(centerX + eyeOffsetX - 16, eyeY - 6, accentColor);
+        }
+
+        waitForDisplayReady(display);
+        display.startWrite();
+        frameSprite.pushSprite(0, 0);
+        display.endWrite();
+        return;
+    }
+
+    waitForDisplayReady(display);
+    display.startWrite();
+    display.fillScreen(TFT_BLACK);
+    display.fillRect(faceBoxX, faceBoxY, faceBoxW, faceBoxH, bgColor);
+
+    if (eyesClosed) {
+        display.drawFastHLine(centerX - eyeOffsetX - eyeRadiusX, eyeY, eyeRadiusX * 2, eyeColor);
+        display.drawFastHLine(centerX + eyeOffsetX - eyeRadiusX, eyeY, eyeRadiusX * 2, eyeColor);
+    } else if (eyesHalfClosed) {
+        display.fillRoundRect(centerX - eyeOffsetX - eyeRadiusX, eyeY - 2, eyeRadiusX * 2, 5, 2, eyeColor);
+        display.fillRoundRect(centerX + eyeOffsetX - eyeRadiusX, eyeY - 2, eyeRadiusX * 2, 5, 2, eyeColor);
     } else {
-        renderFrame(sequence.frames[safeIndex], renderYOffset, forceRedraw);
+        display.fillRoundRect(centerX - eyeOffsetX - eyeRadiusX + jitterX,
+                              eyeY - eyeRadiusY + jitterY,
+                              eyeRadiusX * 2,
+                              eyeRadiusY * 2,
+                              eyeRadiusY,
+                              eyeColor);
+        display.fillRoundRect(centerX + eyeOffsetX - eyeRadiusX - jitterX,
+                              eyeY - eyeRadiusY - jitterY,
+                              eyeRadiusX * 2,
+                              eyeRadiusY * 2,
+                              eyeRadiusY,
+                              eyeColor);
     }
 
-    renderMicroExpressions(microFrame, personalityProfile, blendSnapshot);
-    if (kEnableGlowOverlay) {
-        const float normalizedFrame = sequence.frames.size() <= 1
-                                          ? 0.0f
-                                          : static_cast<float>(safeIndex) / static_cast<float>(sequence.frames.size() - 1);
-        renderGlowOverlay(sequence, normalizedFrame, speakingAmplitude_);
+    display.drawLine(centerX - eyeOffsetX - 14, browY + browTilt,
+                     centerX - eyeOffsetX + 14, browY - browTilt, accentColor);
+    display.drawLine(centerX + eyeOffsetX - 14, browY - browTilt,
+                     centerX + eyeOffsetX + 14, browY + browTilt, accentColor);
+
+    if (state.mouthOpen > 0.35f) {
+        const int openR = 7 + static_cast<int>(state.mouthOpen * 8.0f);
+        display.drawCircle(centerX, mouthY, openR, accentColor);
+    } else if (state.mouthCurve > 0.22f || emotion == "happy") {
+        display.drawCircle(centerX, mouthY, 12, accentColor);
+        display.fillRect(centerX - 14, mouthY - 12, 28, 12, bgColor);
+    } else if (state.mouthCurve < -0.18f || emotion == "sleepy" || emotion == "confused") {
+        display.drawCircle(centerX, mouthY + 12, 10, accentColor);
+        display.fillRect(centerX - 12, mouthY + 12, 24, 12, bgColor);
+    } else {
+        display.drawFastHLine(centerX - 18, mouthY, 36, accentColor);
     }
+
+    if (microFrame.eyelidTwitch) {
+        display.drawPixel(centerX - eyeOffsetX + 16, eyeY - 6, accentColor);
+        display.drawPixel(centerX + eyeOffsetX - 16, eyeY - 6, accentColor);
+    }
+    display.endWrite();
 }
 
 void FaceEngine::renderMicroExpressions(const MicroExpressionFrame& microFrame,
                                         const PersonalityProfile& personalityProfile,
                                         const EmotionBlendEngine::Snapshot&) const {
+    return; // disable microexpressions
     if (!microExpressionsEnabled_) {
         return;
     }

@@ -11,7 +11,7 @@ namespace {
 constexpr const char* kMemoryIndexPath = "/Flic/memory/memory_index.json";
 constexpr size_t kMaxLearningEvents = 48;
 constexpr unsigned long kVoicePersistCooldownMs = 1200;
-constexpr bool kDisableSdPersistence = false;
+constexpr bool kDisableSdPersistence = true;
 }
 
 namespace Flic {

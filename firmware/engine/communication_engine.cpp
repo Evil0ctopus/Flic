@@ -15,9 +15,9 @@ namespace Flic {
 
 namespace {
 constexpr bool kDisableVoiceAudioOutput = false;  // ENABLED: Real TTS voice synthesis
-constexpr unsigned long kVoiceWarmupMs = 5000;
+constexpr unsigned long kVoiceWarmupMs = 0;
 constexpr size_t kMaxVoiceMessageLen = 120;
-constexpr unsigned long kVoiceSpeakCooldownMs = 3000;
+constexpr unsigned long kVoiceSpeakCooldownMs = 1200;
 constexpr unsigned long kNotifyAnimationCooldownMs = 2600;
 constexpr unsigned long kNotifyBubbleCooldownMs = 1800;
 
@@ -117,6 +117,10 @@ void CommunicationEngine::speakVoice(const String& msg) {
 
 void CommunicationEngine::speakEmotion(const String& emotion) {
     activeEmotion_ = normalizeEmotion(emotion);
+
+    if (voiceEngine_ != nullptr) {
+        voiceEngine_->setVoiceEmotionState(activeEmotion_);
+    }
 
     if (emotionEngine_ != nullptr) {
         emotionEngine_->setEmotion(activeEmotion_);

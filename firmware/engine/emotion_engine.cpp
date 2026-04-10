@@ -13,7 +13,7 @@
 namespace Flic {
 namespace {
 constexpr const char* kEmotionStatePath = "/Flic/memory/emotion_state.json";
-constexpr bool kDisableSdPersistence = false;
+constexpr bool kDisableSdPersistence = true;
 constexpr float kMinimumStrength = 0.05f;
 constexpr float kStrongStrength = 0.7f;
 constexpr float kMinimumBias = -1.0f;

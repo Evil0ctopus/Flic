@@ -36,6 +36,7 @@ bool FaceSettingsManager::load(FaceSettings& settings) {
     settings.idleEnabled = root["idle_enabled"] | settings.idleEnabled;
     settings.glowIntensity = root["glow_intensity"] | settings.glowIntensity;
     settings.eyeColor = root["eye_color"] | settings.eyeColor;
+    settings.personalityIntensity = root["personality_intensity"] | settings.personalityIntensity;
     if (root["emotion_animation_map"].is<JsonObject>()) {
         String mapPayload;
         serializeJson(root["emotion_animation_map"], mapPayload);
@@ -84,6 +85,7 @@ bool FaceSettingsManager::readDocument(JsonDocument& document) const {
     document["idle_enabled"] = true;
     document["glow_intensity"] = 0.8f;
     document["eye_color"] = "#AEE6FF";
+    document["personality_intensity"] = "balanced";
     document["emotion_animation_map"] = serialized("{}");
     document["ai_can_modify"] = false;
     document["ai_can_create"] = false;
@@ -102,6 +104,7 @@ bool FaceSettingsManager::writeDocument(const FaceSettings& settings) const {
     document["idle_enabled"] = settings.idleEnabled;
     document["glow_intensity"] = settings.glowIntensity;
     document["eye_color"] = settings.eyeColor;
+    document["personality_intensity"] = settings.personalityIntensity;
     String mapPayload = settings.emotionAnimationMapJson;
     mapPayload.trim();
     if (mapPayload.length() == 0) {

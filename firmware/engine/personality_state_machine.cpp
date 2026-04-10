@@ -16,6 +16,7 @@ void PersonalityStateMachine::reset() {
     lastEmotionChangeMs_ = 0;
     rapidWindowStartMs_ = 0;
     rapidEmotionChangeCount_ = 0;
+    voiceEmotionState_ = "neutral";
     refreshProfile();
 }
 
@@ -64,7 +65,22 @@ void PersonalityStateMachine::noteEmotionChange(unsigned long nowMs, const Strin
     lastInteractionMs_ = nowMs;
 }
 
+void PersonalityStateMachine::setVoiceEmotionState(const String& emotion) {
+    String normalized = normalizeName(emotion);
+    if (normalized.length() == 0) {
+        normalized = "neutral";
+    }
+    voiceEmotionState_ = normalized;
+    profile_.voiceEmotionState = voiceEmotionState_;
+}
+
+String PersonalityStateMachine::voiceEmotionState() const {
+    return voiceEmotionState_;
+}
+
 void PersonalityStateMachine::update(unsigned long nowMs, const String& currentEmotion, bool blendingActive) {
+    setVoiceEmotionState(currentEmotion);
+
     if (!contextRulesEnabled_) {
         refreshProfile();
         return;
@@ -216,6 +232,8 @@ void PersonalityStateMachine::refreshProfile() {
             profile_.idleAnimation = "idle";
             break;
     }
+
+    profile_.voiceEmotionState = voiceEmotionState_;
 }
 
 }  // namespace Flic

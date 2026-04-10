@@ -88,6 +88,7 @@ public:
     bool setEasing(const String& animationName, const String& easingType);
     bool setGlowProfile(const String& animationName, const FaceGlowProfile& params);
     bool setEmotion(const String& emotionName);
+    bool clearEmotion();
     bool setEmotionBlend(const String& fromEmotion, const String& toEmotion, uint32_t durationMs);
     bool isBlending() const;
     void enableMicroExpressions(bool enabled);
@@ -155,8 +156,42 @@ public:
 
     // Verifies the presence and frame count of a required animation set, logs results
     bool verifyAnimationSet(const char* animationName) const;
+    void renderBootAnimation();
 
 private:
+    struct EmotionParameters {
+        float eyebrowAngle = 0.0f;
+        float eyebrowHeight = 0.0f;
+        float eyeSquish = 1.0f;
+        float pupilJitter = 0.5f;
+        float mouthCurve = 0.0f;
+        float mouthOpen = 0.0f;
+        float glowIntensity = 0.4f;
+        float microExpressionBias = 0.5f;
+    };
+
+    enum class CuriosityMode : uint8_t {
+        Soft = 0,
+        Active = 1,
+        Mischievous = 2,
+    };
+
+    struct FaceState {
+        float eyebrowAngle = 0.0f;
+        float eyebrowHeight = 0.0f;
+        float eyeSquish = 1.0f;
+        float pupilJitter = 0.5f;
+        float mouthCurve = 0.0f;
+        float mouthOpen = 0.0f;
+        float glowIntensity = 0.4f;
+        float microExpressionBias = 0.5f;
+        float headTilt = 0.0f;
+        float blinkClosure = 0.0f;
+        int eyeDriftX = 0;
+        int eyeDriftY = 0;
+        bool halfBlink = false;
+    };
+
     struct EmotionAnimationOverride {
         String emotion;
         String animation;
@@ -204,6 +239,7 @@ private:
     String styleDisplayName(const String& styleName) const;
     String timingCurveName(TimingCurve curve) const;
     void renderFrame(const FrameAsset& frame, int yOffsetPx = 0, bool forceRedraw = false) const;
+    void renderVectorFace(const MicroExpressionFrame& microFrame, const PersonalityProfile& personalityProfile) const;
     void runTransitionTo(const FrameAsset& nextFrame) const;
     void renderFaceWindowBlack(uint8_t level) const;
     void renderGlowOverlay(const FrameSequence& sequence, float normalizedFrame, float amplitude) const;
@@ -222,6 +258,10 @@ private:
                                                 const String& emotionName,
                                                 const PersonalityProfile& personalityProfile);
     void updatePersonality(unsigned long nowMs, const EmotionBlendEngine::Snapshot& blendSnapshot, const String& emotionName);
+    void updatePersonality(float deltaSeconds);
+    EmotionParameters emotionParametersFor(const String& emotionName) const;
+    void applyPersonalityToFace(FaceState& state) const;
+    FaceState composeProceduralFaceState(const MicroExpressionFrame& microFrame, const PersonalityProfile& personalityProfile) const;
     String renderEmotionForBlend(unsigned long nowMs, uint32_t frameIndex, const EmotionBlendEngine::Snapshot& blendSnapshot) const;
     size_t renderFrameIndexFor(const FrameSequence& sequence,
                                unsigned long nowMs,
@@ -311,6 +351,39 @@ private:
     unsigned long explicitEmotionHoldUntilMs_ = 0;
     unsigned long lastInteractionMs_ = 0;
     unsigned long lastPersonalityUpdateMs_ = 0;
+    unsigned long nextMicroEventMs_ = 0;
+    unsigned long nextIdleLookMs_ = 0;
+    unsigned long blinkEndMs_ = 0;
+    unsigned long eyebrowFlickEndMs_ = 0;
+    unsigned long mouthTwitchEndMs_ = 0;
+    unsigned long headTiltEndMs_ = 0;
+    unsigned long glowPulseEndMs_ = 0;
+    unsigned long sleepyHalfBlinkEndMs_ = 0;
+    unsigned long mischiefCooldownUntilMs_ = 0;
+    bool blinkActive_ = false;
+    bool doubleBlinkPending_ = false;
+    bool fastBlinkActive_ = false;
+    bool eyebrowFlickActive_ = false;
+    bool mouthTwitchActive_ = false;
+    bool headTiltActive_ = false;
+    bool glowPulseActive_ = false;
+    bool sleepyHalfBlinkActive_ = false;
+    bool cuteExpressionActive_ = false;
+    float eyeDriftX_ = 0.0f;
+    float eyeDriftY_ = 0.0f;
+    float eyeDriftTargetX_ = 0.0f;
+    float eyeDriftTargetY_ = 0.0f;
+    float eyebrowLiftOffset_ = 0.0f;
+    float mouthTwitchOffset_ = 0.0f;
+    float headTiltOffset_ = 0.0f;
+    float glowPulseBoost_ = 0.0f;
+    CuriosityMode curiosityMode_ = CuriosityMode::Soft;
+    String personalityIntensityPreset_ = "balanced";
+    float personalityExpressivenessScale_ = 1.0f;
+    float personalityCadenceScale_ = 1.0f;
+    String proceduralCurrentEmotion_ = "neutral";
+    String proceduralTargetEmotion_ = "neutral";
+    float proceduralEmotionBlend_ = 1.0f;
     uint8_t rapidSwitchCount_ = 0;
     String lastEmotionSwitch_;
     FaceTransitionEngine transitionEngine_;

@@ -7,7 +7,7 @@
 namespace Flic {
 namespace {
 constexpr const char* kMemoryIndexPath = "/Flic/memory/memory_index.json";
-constexpr bool kDisableSdPersistence = false;
+constexpr bool kDisableSdPersistence = true;
 }
 
 bool MemoryManager::begin() {

@@ -34,6 +34,7 @@ private:
     bool externalAvailable_ = false;
     uint8_t userBrightness_ = 20;
     uint8_t emotionBrightness_ = 20;
+    uint8_t baseEmotionBrightness_ = 20;
     uint8_t currentR_ = 0;
     uint8_t currentG_ = 0;
     uint8_t currentB_ = 0;

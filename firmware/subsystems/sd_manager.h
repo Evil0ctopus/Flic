@@ -3,11 +3,6 @@
 #include <Arduino.h>
 #include <ArduinoJson.h>
 
-
-#pragma once
-#include <Arduino.h>
-#include <ArduinoJson.h>
-
 namespace Flic {
 namespace SdManager {
 

@@ -14,6 +14,7 @@
 #include "engine/asr_engine.h"
 #include "engine/webui_engine.h"
 #include "engine/audio_input.h"
+#include "engine/audio_engine.h"
 #include "engine/audio_output.h"
 #include "engine/camera_engine.h"
 #include "engine/environment_light_engine.h"
@@ -26,6 +27,7 @@
 #include "engine/idle_behavior.h"
 #include "engine/memory_manager.h"
 #include "engine/proposal_system.h"
+#include "engine/personality_engine.h"
 #include "engine/settings_manager.h"
 #include "subsystems/light_engine.h"
 #include "subsystems/sd_manager.h"
@@ -34,12 +36,11 @@
 #include "diagnostics/sd_diagnostics.h"
 #include "diagnostics/webui_event_hook.h"
 #include "ui/personality_ui.h"
-#include "ui/boot_animation.h"
 #include "ui/text_bubbles.h"
 
 namespace {
 struct RuntimeSettings {
-    uint8_t brightness = 20;
+    uint8_t brightness = 45;
     uint8_t volume = 180;
     String voiceStyle = "natural";
     float personalityEnergy = 0.5f;
@@ -132,7 +133,10 @@ constexpr bool kEnableUsbRuntime = true;
 constexpr bool kEnableMilestoneRuntime = true;
 constexpr bool kSafeBootMode = false;
 constexpr bool kShowWebUiTextBubbles = false;
-constexpr bool kRunBootExpressionDemo = true;
+constexpr bool kRunBootExpressionDemo = false;
+constexpr bool kRunCreatureVoiceSelfTestOnBoot = true;
+constexpr bool kRunCreatureVoiceSelfTestInLoop = true;
+constexpr bool kRunSdDeepVerifyOnBoot = false;
 
 unsigned long lastLoopMs = 0;
 unsigned long lastMotionNotifyMs = 0;
@@ -166,6 +170,7 @@ unsigned long lastTouchMs = 0;
 unsigned long lastVoiceMs = 0;
 unsigned long lastMotionMs = 0;
 unsigned long bootStartMs = 0;
+unsigned long postInitVoiceTestUntilMs = 0;
 unsigned long lastWebUiHintBubbleMs = 0;
 LearnedTopic learnedTopics[3];
 float needConnection = 0.25f;
@@ -351,7 +356,13 @@ void onTtsAmplitudeEnvelope(float amplitude, void* context) {
 }
 
 void applyRuntimeSettings() {
+    if (runtimeSettings.brightness < 10) {
+        runtimeSettings.brightness = 45;
+    }
     lightEngine.setBrightness(runtimeSettings.brightness);
+    if (runtimeSettings.volume < 25) {
+        runtimeSettings.volume = 120;
+    }
     audioOutput.setVolume(runtimeSettings.volume);
     audioOutput.setVoiceStyle(runtimeSettings.voiceStyle);
     audioOutput.setVoiceTuning(runtimeSettings.voiceSpeed, runtimeSettings.voicePitch, runtimeSettings.voiceClarity);
@@ -464,6 +475,21 @@ bool handleWebUiFaceSettings(const String& requestJson, String& responseJson) {
         }
         next.eyeColor = String(root["eye_color"].as<const char*>());
         next.eyeColor.trim();
+        changed = true;
+    }
+
+    if (!root["personality_intensity"].isNull()) {
+        if (!root["personality_intensity"].is<const char*>()) {
+            responseJson = "{\"ok\":false,\"error\":\"personality_intensity_must_be_string\"}";
+            return false;
+        }
+        next.personalityIntensity = String(root["personality_intensity"].as<const char*>());
+        next.personalityIntensity.trim();
+        next.personalityIntensity.toLowerCase();
+        if (!(next.personalityIntensity == "subtle" || next.personalityIntensity == "balanced" || next.personalityIntensity == "dramatic")) {
+            responseJson = "{\"ok\":false,\"error\":\"personality_intensity_must_be_subtle_balanced_or_dramatic\"}";
+            return false;
+        }
         changed = true;
     }
 
@@ -1628,12 +1654,18 @@ void initializeCoreS3() {
 
     M5.begin(config);
     M5.Display.setBrightness(128);
+    if (M5.Speaker.isEnabled()) {
+        M5.Speaker.setVolume(180);
+        M5.Speaker.tone(740.0f, 80);
+        delay(20);
+        M5.Speaker.tone(980.0f, 80);
+    }
 }
 
 void initializeLightingAndBoot() {
     lightEngine.begin();
+    lightEngine.setBrightness(45);
     lightEngine.emotionColor("calm");
-    Flic::showBootAnimation(lightEngine);
     M5.Display.startWrite();
     M5.Display.fillScreen(TFT_BLACK);
     M5.Display.endWrite();
@@ -1643,7 +1675,9 @@ void initializeStorage() {
     Flic::SdManager::configureBus();
     Flic::SdManager::mount();
     Flic::SdDiagnostics::logSdStatus();
-    Flic::SdManager::verify();
+    if (kRunSdDeepVerifyOnBoot) {
+        Flic::SdManager::verify();
+    }
     if (!Flic::SdManager::isMounted()) {
         gUseSdFallbackFace = true;
         Serial.println("Flic: NO-SD mode active - using built-in faces and boot indicator.");
@@ -1918,6 +1952,7 @@ void updateRuntimeEngines(float dtSeconds) {
     faceEngine.updateAutoEmotion(dtSeconds);
     faceEngine.update(dtSeconds);
     faceEngine.drawFrame();
+    audioOutput.update();
     communicationEngine.update();
     if (kEnableMilestoneRuntime) {
         milestoneEngine.update();
@@ -1926,6 +1961,7 @@ void updateRuntimeEngines(float dtSeconds) {
         const unsigned long nowMs = millis();
         if (!kEnableVoiceLiteMode || (nowMs - lastVoiceUpdateMs) >= kVoiceLiteUpdateIntervalMs) {
             voiceEngine.update();
+            voiceEngine.updateVoiceEngine(dtSeconds);
             lastVoiceUpdateMs = nowMs;
         }
     }
@@ -2231,7 +2267,11 @@ void setup() {
     Serial.println("[BOOT] SD mount and verification complete.");
 
     initializeLightingAndBoot();
-    if (gUseSdFallbackFace) {
+    if (gUseSdFallbackFace
+#if defined(VECTOR_ONLY_FACE) && VECTOR_ONLY_FACE
+        && false
+#endif
+    ) {
         Serial.println("[BOOT] SD fallback face enabled.");
         renderBuiltInFallbackFace();
         gLastFallbackFaceDrawMs = millis();
@@ -2240,6 +2280,10 @@ void setup() {
     Serial.println("[BOOT] Initializing core engines...");
     initializeCoreEngines();
     initializeInteractionEngines();
+    if (kRunCreatureVoiceSelfTestOnBoot) {
+        voiceEngine.setVoiceEmotionState("curious");
+        voiceEngine.speakTextCreature("hmm hi friend tiny creature voice online");
+    }
     loadRuntimeSettings();
     applyRuntimeSettings();
     runBootExpressionDemoIfEnabled();
@@ -2261,6 +2305,8 @@ void setup() {
     }
     showEmergencyScreenIfEnabled();
 
+    postInitVoiceTestUntilMs = millis() + 120000UL;
+    Serial.println("[BOOT] Runtime voice self-test window armed (120s)");
     Serial.println("========== Flic Boot: END ==========");
     Serial.println("[BOOT] System initialization complete.\n");
 }
@@ -2289,7 +2335,34 @@ void loop() {
     }
 
     updateRuntimeEngines(dtSeconds);
-    if (gUseSdFallbackFace) {
+
+    if (kRunCreatureVoiceSelfTestInLoop && millis() < postInitVoiceTestUntilMs) {
+        static unsigned long lastVoiceSelfTestMs = 0;
+        const unsigned long nowMs = millis();
+        if ((nowMs - lastVoiceSelfTestMs) >= 3000UL) {
+            lastVoiceSelfTestMs = nowMs;
+            Serial.println("[VoiceTrace] runtime self-test firing");
+            M5.Speaker.setVolume(180);
+            // Direct talker-mode tones (independent of voice engine) for hard audio validation.
+            M5.Speaker.tone(420.0f, 40);
+            delay(12);
+            M5.Speaker.tone(640.0f, 40);
+            delay(12);
+            M5.Speaker.tone(520.0f, 36);
+            delay(12);
+            M5.Speaker.tone(760.0f, 44);
+            delay(12);
+            M5.Speaker.tone(580.0f, 32);
+            voiceEngine.setVoiceEmotionState("curious");
+            voiceEngine.speakTextCreature("gremlin voice check runtime");
+        }
+    }
+
+    if (gUseSdFallbackFace
+#if defined(VECTOR_ONLY_FACE) && VECTOR_ONLY_FACE
+        && false
+#endif
+    ) {
         const unsigned long nowMs = millis();
         if ((nowMs - gLastFallbackFaceDrawMs) >= 1500UL) {
             renderBuiltInFallbackFace();

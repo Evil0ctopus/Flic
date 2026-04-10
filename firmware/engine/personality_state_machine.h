@@ -19,6 +19,7 @@ struct PersonalityProfile {
     float microExpressionScale = 0.5f;
     float transitionSpeedScale = 1.0f;
     String idleAnimation = "idle";
+    String voiceEmotionState = "neutral";
 };
 
 class PersonalityStateMachine {
@@ -32,6 +33,8 @@ public:
     bool contextRulesEnabled() const;
     void noteInteraction(unsigned long nowMs);
     void noteEmotionChange(unsigned long nowMs, const String& emotion);
+    void setVoiceEmotionState(const String& emotion);
+    String voiceEmotionState() const;
     void update(unsigned long nowMs, const String& currentEmotion, bool blendingActive);
     const PersonalityProfile& profile() const;
 
@@ -47,6 +50,7 @@ private:
     unsigned long lastEmotionChangeMs_ = 0;
     unsigned long rapidWindowStartMs_ = 0;
     uint8_t rapidEmotionChangeCount_ = 0;
+    String voiceEmotionState_ = "neutral";
     PersonalityProfile profile_;
 };
 

@@ -11,6 +11,10 @@
 #include <vector>
 #include <cctype>
 
+#ifndef VECTOR_ONLY_FACE
+#define VECTOR_ONLY_FACE 0
+#endif
+
 namespace Flic {
 namespace {
 constexpr const char* kAnimationRoot = "/Flic/animations/face/default";
@@ -92,6 +96,11 @@ bool parseHexColor(const char* colorText, uint32_t& color) {
 }
 
 bool loadAnimationDocument(const String& path, Animation& animation) {
+#if VECTOR_ONLY_FACE
+    (void)path;
+    (void)animation;
+    return false;
+#else
     if (!SdManager::isMounted()) {
         Serial.println("Flic: SD not mounted, skipping face JSON load.");
         return false;
@@ -227,6 +236,7 @@ bool loadAnimationDocument(const String& path, Animation& animation) {
 
     Serial.printf("[ANIM] Animation loaded: %s | Frames: %u | FPS: %u\n", path.c_str(), (unsigned)animation.frames.size(), (unsigned)animation.fps);
     return !animation.frames.empty();
+#endif
 }
 
 }  // namespace
@@ -290,6 +300,11 @@ bool AnimationEngine::begin() {
         Serial.println("Flic: animation worker unavailable; playback may be fallback synchronous");
     }
 
+    if (VECTOR_ONLY_FACE) {
+        Serial.println("[ANIM] Vector-only mode: JSON animation SD loader disabled.");
+        return true;
+    }
+
     if (!SdManager::isMounted()) {
         Serial.println("[ANIM] SD not mounted, skipping face JSON load.");
         return false;
@@ -317,6 +332,10 @@ void AnimationEngine::setPlaybackSpeed(float speed) {
 }
 
 bool AnimationEngine::hasRealAnimations() const {
+    if (VECTOR_ONLY_FACE) {
+        return true;
+    }
+
     if (!SdManager::isMounted()) {
         Serial.println("[ANIM] hasRealAnimations: SD not mounted");
         return false;
@@ -349,6 +368,10 @@ bool AnimationEngine::isPlaying() const {
 }
 
 bool AnimationEngine::playFirstAnimation() {
+    if (VECTOR_ONLY_FACE) {
+        return true;
+    }
+
     String filePath;
     if (!loadFirstAnimationFromDisk(filePath)) {
         return false;
@@ -372,6 +395,11 @@ bool AnimationEngine::playFirstAnimation() {
 }
 
 bool AnimationEngine::playAnimation(const char* fileName) {
+    if (VECTOR_ONLY_FACE) {
+        (void)fileName;
+        return true;
+    }
+
     if (fileName == nullptr || fileName[0] == '\0') {
         return false;
     }
@@ -492,6 +520,11 @@ bool AnimationEngine::generateFirstAnimationIfNeeded() {
 }
 
 bool AnimationEngine::loadFirstAnimationFromDisk(String& filePath) {
+    if (VECTOR_ONLY_FACE) {
+        filePath = "";
+        return false;
+    }
+
     if (!SdManager::isMounted()) {
         Serial.println("[ANIM] SD not mounted, skipping face JSON load.");
         return false;
