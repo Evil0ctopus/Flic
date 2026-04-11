@@ -7,3 +7,6 @@ firmware/config.local.h
 firmware/config_webui.local.h
 build/
 build/animations/output/
+brain_server/__pycache__/
+brain_server/logs/*.log
+brain_server/voicepack_cache/*.wav

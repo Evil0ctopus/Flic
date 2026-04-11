@@ -7,7 +7,6 @@
 #include "voice_engine.h"
 #include "../subsystems/light_engine.h"
 #include "../ui/personality_ui.h"
-#include "../ui/text_bubbles.h"
 
 #include <M5Unified.h>
 
@@ -44,7 +43,6 @@ bool CommunicationEngine::begin(LightEngine* lightEngine,
                                 AnimationEngine* animationEngine,
                                 EmotionEngine* emotionEngine,
                                 MemoryManager* memoryManager,
-                                TextBubbles* textBubbles,
                                 VoiceEngine* voiceEngine,
                                 FaceEngine* faceEngine) {
     lightEngine_ = lightEngine;
@@ -52,7 +50,6 @@ bool CommunicationEngine::begin(LightEngine* lightEngine,
     animationEngine_ = animationEngine;
     emotionEngine_ = emotionEngine;
     memoryManager_ = memoryManager;
-    textBubbles_ = textBubbles;
     voiceEngine_ = voiceEngine;
     faceEngine_ = faceEngine;
     activeEmotion_ = "calm";
@@ -65,24 +62,11 @@ bool CommunicationEngine::begin(LightEngine* lightEngine,
 }
 
 void CommunicationEngine::update() {
-    if (textBubbles_ != nullptr) {
-        textBubbles_->update();
-    }
 }
 
 void CommunicationEngine::speakText(const String& msg) {
     if (msg.length() == 0) {
         return;
-    }
-
-    if (textBubbles_ != nullptr) {
-        BubbleSize size = BubbleSize::Medium;
-        if (msg.length() <= 20) {
-            size = BubbleSize::Small;
-        } else if (msg.length() >= 64) {
-            size = BubbleSize::Large;
-        }
-        textBubbles_->showMessage(msg, size, activeEmotion_);
     }
 
     if (memoryManager_ != nullptr) {
@@ -179,9 +163,6 @@ void CommunicationEngine::speakAnimation(const String& anim) {
     if (anim == "thinking") {
         if (personalityUi_ != nullptr) {
             personalityUi_->showExpression("thinking");
-        }
-        if (textBubbles_ != nullptr) {
-            textBubbles_->showMessage("Thinking...", BubbleSize::Small, "curious");
         }
         if (lightEngine_ != nullptr) {
             lightEngine_->pulse(120, 60, 255, 20);

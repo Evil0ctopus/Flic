@@ -142,6 +142,11 @@ This system provides a fully deterministic, hands-off pipeline for generating an
 - All assets are uploaded to the device SD card over COM9, with chunked transfer, CRC verification, and auto-created directories.
 - The process is fully automated and always overwrites existing files for consistency.
 
+### Uploading voicepack WAVs over serial
+- Place generated WAV phrase files under `tools/voicepack/generated/`.
+- Run the VS Code task **Upload Voicepack WAVs to CoreS3 SD**.
+- The uploader sends each file to `/voicepack/` over serial with CRC validation, so voice phrases can be refreshed without mounting the SD card on PC.
+
 ### Deterministic, hands-off workflow
 - All steps are automated and reproducible from the repo.
 - The pipeline ensures that the device SD card always matches the repo asset vault and generated animations.

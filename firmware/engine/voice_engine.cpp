@@ -3,13 +3,17 @@
 #include "face_engine.h"
 #include "audio_input.h"
 #include "audio_output.h"
-#include "creature_grammar.h"
-
-#include <vector>
+#include "sd_voice_pack_loader.h"
+#include "voicepack_manager.h"
 
 namespace Flic {
 
 namespace {
+bool gPiperAvailable = false;
+bool gPiperUnavailableWarned = false;
+unsigned long gLastDropSpeechLogMs = 0;
+bool gAudioAvailable = false;
+
 String normalizeEmotion(const String& emotion) {
     String value = emotion;
     value.trim();
@@ -20,8 +24,8 @@ String normalizeEmotion(const String& emotion) {
     return value;
 }
 
-bool isSpikeEmotion(const String& emotion) {
-    return emotion == "mischievous" || emotion == "curious" || emotion == "surprised" || emotion == "excited";
+void VoiceTrace(const String& message) {
+    Serial.printf("[VoiceTrace] %s\n", message.c_str());
 }
 }
 
@@ -30,16 +34,29 @@ bool VoiceEngine::begin(AudioInput* input, AudioOutput* output, FaceEngine* face
     output_ = output;
     faceEngine_ = faceEngine;
     voiceEmotionState_ = "neutral";
-    voiceChaos_ = 0.0f;
     updateAccumulator_ = 0.0f;
-    lastMicroVocalMs_ = 0;
+    lastExplicitSpeechMs_ = 0;
+    personalityLayer_.begin();
     if (input_ != nullptr) {
         input_->begin();
     }
+    bool outputReady = false;
     if (output_ != nullptr) {
-        output_->begin();
+        outputReady = output_->begin();
     }
+
+    (void)outputReady;
+    // Degraded mode for now: keep Piper architecture active, but disable playback until inference backend is ready.
+    setPiperAvailable(false);
+
     return true;
+}
+
+void VoiceEngine::attachAudioInput(AudioInput* input, bool beginNow) {
+    input_ = input;
+    if (input_ != nullptr && beginNow) {
+        input_->begin();
+    }
 }
 
 void VoiceEngine::update() {
@@ -58,23 +75,7 @@ void VoiceEngine::updateVoiceEngine(float dtSeconds) {
         updateAccumulator_ += dtSeconds;
     }
 
-    const unsigned long nowMs = millis();
-    const bool spike = isSpikeEmotion(voiceEmotionState_);
-
-    if (!spike) {
-        voiceChaos_ *= 0.96f;
-    }
-
-    const unsigned long intervalMs = spike ? 1800UL : 4200UL;
-    if ((nowMs - lastMicroVocalMs_) >= intervalMs) {
-        lastMicroVocalMs_ = nowMs;
-        if (spike) {
-            const char* sound = (voiceEmotionState_ == "surprised") ? "eep" : ((voiceEmotionState_ == "mischievous") ? "hah" : "hmm");
-            playCreatureSound(sound);
-        } else if (voiceEmotionState_ == "idle" || voiceEmotionState_ == "neutral" || voiceEmotionState_ == "sleepy") {
-            playCreatureSound("hmm");
-        }
-    }
+    personalityLayer_.update(millis());
 }
 
 bool VoiceEngine::popVoiceCommand(String& commandOut) {
@@ -90,64 +91,162 @@ void VoiceEngine::speak(const String& msg, const String& emotion) {
         return;
     }
     setVoiceEmotionState(emotion);
-    Serial.printf("[VoiceTrace] trigger speak emotion=%s len=%u\n",
-                  voiceEmotionState_.c_str(), static_cast<unsigned>(msg.length()));
+    VoiceTrace(String("VOICE: speak_original=") + msg);
     if (faceEngine_ != nullptr) {
         faceEngine_->setEmotion(voiceEmotionState_);
         faceEngine_->setSpeakingAmplitude(0.75f);
         faceEngine_->play("speaking");
     }
 
-    speakTextCreature(msg.c_str());
-}
+    const String finalText = applyPersonalityTransform(msg, voiceEmotionState_);
+    lastExplicitSpeechMs_ = millis();
+    VoiceTrace(String("VOICE: speak_transformed=") + finalText);
 
-void VoiceEngine::speakTextCreature(const char* text) {
-    if (output_ == nullptr || text == nullptr) {
+    if (!gAudioAvailable) {
+        const unsigned long nowMs = millis();
+        if (gLastDropSpeechLogMs == 0 || (nowMs - gLastDropSpeechLogMs) >= 3000UL) {
+            VoiceTrace("VOICE: drop_speech (backend unavailable).");
+            gLastDropSpeechLogMs = nowMs;
+        }
+        if (output_ != nullptr) {
+            output_->playEmotionTone(voiceEmotionState_);
+        }
         return;
     }
 
-    Serial.printf("[VoiceTrace] creature input=\"%s\"\n", text);
+    if (voicePackManager_ == nullptr) {
+        VoiceTrace("VOICE: drop_speech (backend unavailable).");
+        if (output_ != nullptr) {
+            output_->playEmotionTone(voiceEmotionState_);
+        }
+        return;
+    }
 
-    const String creatureText = generateCreatureSpeech(text);
-    Serial.printf("[VoiceTrace] grammar output=\"%s\"\n", creatureText.c_str());
-    output_->setCreatureEmotion(voiceEmotionState_);
-    output_->speakCreatureTTS(creatureText.c_str(), voiceEmotionState_.c_str(), "en");
+    const std::string resolvedKeyStd = voicePackManager_->ResolveKey(std::string(finalText.c_str()));
+    const String resolvedKey = String(resolvedKeyStd.c_str());
+
+    if (voicePackManager_->Exists(resolvedKey.c_str())) {
+        if (!voicePackManager_->Play(resolvedKey.c_str())) {
+            VoiceTrace(String("VOICE: missing_wav=") + resolvedKey);
+        }
+        return;
+    }
+
+    const std::string originalKeyStd = voicePackManager_->ResolveKey(std::string(msg.c_str()));
+    const String originalKey = String(originalKeyStd.c_str());
+    if (originalKey != resolvedKey && voicePackManager_->Exists(originalKey.c_str())) {
+        if (!voicePackManager_->Play(originalKey.c_str())) {
+            VoiceTrace(String("VOICE: missing_wav=") + originalKey);
+        }
+        return;
+    }
+
+    VoiceTrace(String("VOICE: missing_wav=") + resolvedKey);
+
+    // Prefer phrase-level fallback clips so cadence remains natural when a specific key is missing.
+    static const char* kPhraseFallbackKeys[] = {
+        "hello_friend_voice_system_online",
+        "runtime_voice_check",
+        "i_can_pause_a_little_then_continue_with_a_second_sentence",
+        "if_this_sounds_natural_cadence_tuning_is_working",
+        "test_creature",
+    };
+
+    for (size_t i = 0; i < (sizeof(kPhraseFallbackKeys) / sizeof(kPhraseFallbackKeys[0])); ++i) {
+        const char* key = kPhraseFallbackKeys[i];
+        if (voicePackManager_->Exists(key)) {
+            if (!voicePackManager_->Play(key)) {
+                VoiceTrace(String("VOICE: missing_wav=") + String(key));
+            }
+            return;
+        }
+    }
+
+    static const char* kCreatureNoises[] = {"eep", "heh", "ooh", "huh", "mm"};
+    const size_t noiseIndex = static_cast<size_t>(millis() % 5UL);
+    if (!voicePackManager_->Play(kCreatureNoises[noiseIndex])) {
+        VoiceTrace(String("VOICE: missing_wav=") + String(kCreatureNoises[noiseIndex]));
+    }
+
+    // Guaranteed audible fallback for safety: never fail silently.
+    if (output_ != nullptr) {
+        output_->playEmotionTone(voiceEmotionState_);
+    }
+
+    // Keep Piper backend path in place for future inference rollout.
+    if (gPiperAvailable) {
+        output_->speakPiper(finalText, voiceEmotionState_, "en", 1.10f, 1.10f);
+    }
 }
 
-String VoiceEngine::generateCreatureSpeech(const char* input) const {
-    return buildCreatureSpeech(input, voiceEmotionState_, voiceChaos_);
+void VoiceEngine::setVoiceProfile(const String& profileName) {
+    voiceProfile_ = profileName;
+    voiceProfile_.trim();
+    if (voiceProfile_.length() == 0) {
+        voiceProfile_ = "modern_default";
+    }
+    VoiceTrace(String("VOICE: profile=") + voiceProfile_);
 }
 
-bool VoiceEngine::playCreatureSound(const char* name) {
-    if (output_ == nullptr || name == nullptr) {
-        return false;
+String VoiceEngine::voiceProfile() const {
+    return voiceProfile_;
+}
+
+void VoiceEngine::setPersonalitySpeechEnabled(bool enabled) {
+    personalitySpeechEnabled_ = enabled;
+    personalityLayer_.setEnabled(enabled);
+    VoiceTrace(String("VOICE: personality=") + (personalitySpeechEnabled_ ? "enabled" : "disabled"));
+}
+
+bool VoiceEngine::personalitySpeechEnabled() const {
+    return personalitySpeechEnabled_;
+}
+
+String VoiceEngine::applyPersonalityTransform(const String& message, const String& emotion) {
+    if (!personalitySpeechEnabled_) {
+        return message;
     }
-    if (output_->playCreatureSound(name)) {
-        return true;
-    }
-    output_->playCreatureSound(String(name));
-    return true;
+    const PersonalitySpeechResult transformed = personalityLayer_.transformSpeech(message, emotion);
+    return transformed.text;
 }
 
 void VoiceEngine::setVoiceEmotionState(const String& emotion) {
     voiceEmotionState_ = normalizeEmotion(emotion);
-    if (isSpikeEmotion(voiceEmotionState_)) {
-        voiceChaos_ = 0.65f;
-    } else if (voiceEmotionState_ == "happy") {
-        voiceChaos_ = 0.25f;
-    } else if (voiceEmotionState_ == "sleepy") {
-        voiceChaos_ = 0.02f;
-    } else {
-        voiceChaos_ = 0.10f;
-    }
-
-    if (output_ != nullptr) {
-        output_->setCreatureEmotion(voiceEmotionState_);
-    }
 }
 
 String VoiceEngine::voiceEmotionState() const {
     return voiceEmotionState_;
+}
+
+void VoiceEngine::setSdVoicePackLoader(SdVoicePackLoader* loader) {
+    voicePackLoader_ = loader;
+}
+
+void VoiceEngine::setVoicePackManager(VoicePackManager* manager) {
+    voicePackManager_ = manager;
+}
+
+void VoiceEngine::setPiperAvailable(bool available) {
+    gPiperAvailable = available;
+    if (!gPiperAvailable && !gPiperUnavailableWarned) {
+        VoiceTrace("VOICE: WARNING: Piper inference unavailable (no neural voice / SD pack missing).");
+        gPiperUnavailableWarned = true;
+    }
+}
+
+bool VoiceEngine::piperAvailable() const {
+    return gPiperAvailable;
+}
+
+void VoiceEngine::setAudioAvailable(bool available) {
+    gAudioAvailable = available;
+    if (!gAudioAvailable) {
+        VoiceTrace("VOICE: WARNING: audio unavailable.");
+    }
+}
+
+bool VoiceEngine::audioAvailable() const {
+    return gAudioAvailable;
 }
 
 }  // namespace Flic

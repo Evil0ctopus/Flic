@@ -1,0 +1,70 @@
+{
+  "LLM_PROVIDER": "ollama",
+  "LLM_MODEL": "llama3.1:8b",
+  "USE_CLOUD": false,
+  "API_TOKEN": "Z8RJLgUf5ckIya3iN1mlBCXqd0PFw9Ax6KGYM7VuHDpW2vjb",
+  "WHISPER_MODEL_PATH": "C:/ai/models/whisper/ggml-base.en.bin",
+  "PIPER_MODEL_PATH": "C:/PiperPreview/models/en_US-lessac-medium.onnx",
+  "server": {
+    "host": "127.0.0.1",
+    "port": 8000,
+    "tls": {
+      "certfile": "",
+      "keyfile": ""
+    }
+  },
+  "security": {
+    "api_token": "Z8RJLgUf5ckIya3iN1mlBCXqd0PFw9Ax6KGYM7VuHDpW2vjb",
+    "rate_limit": {
+      "requests": 120,
+      "window_seconds": 60
+    }
+  },
+  "stt": {
+    "binary_path": "C:/ai/whisper.cpp/build/bin/whisper-cli.exe",
+    "model_path": "C:/ai/models/whisper/ggml-base.en.bin",
+    "language": "en",
+    "threads": 8
+  },
+  "llm": {
+    "base_url": "http://localhost:11434",
+    "LLM_PROVIDER": "ollama",
+    "LLM_MODEL": "llama3.1:8b",
+    "USE_CLOUD": false,
+    "model": "llama3.1:8b",
+    "timeout_seconds": 40,
+    "max_reply_chars": 180,
+    "ollama_options": {
+      "num_gpu": 1,
+      "num_ctx": 4096
+    }
+  },
+  "persona": {
+    "enabled": true,
+    "max_chars": 180,
+    "interjections": [
+      "Heh!",
+      "Eep!",
+      "Ooh!"
+    ],
+    "noises": [
+      "eep",
+      "heh",
+      "ooh",
+      "huh"
+    ]
+  },
+  "tts": {
+    "binary_path": "C:/Users/jlors/OneDrive/Desktop/Flic/.venv/Scripts/piper.exe",
+    "model_path": "C:/PiperPreview/models/en_US-lessac-medium.onnx",
+    "sample_rate": 22050,
+    "cache_dir": "voicepack_cache"
+  },
+  "logging": {
+    "dir": "logs",
+    "file": "brain_server.log",
+    "level": "INFO",
+    "max_bytes": 5000000,
+    "backup_count": 5
+  }
+}

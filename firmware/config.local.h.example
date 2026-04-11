@@ -11,4 +11,9 @@ namespace Flic {
 constexpr const char* kWiFiSSID = "YOUR_WIFI_SSID";
 constexpr const char* kWiFiPassword = "YOUR_WIFI_PASSWORD";
 
+#define FLIC_BRAIN_LOCAL_CONFIG 1
+constexpr const char* kBrainServerBaseUrl = "https://brain.yourdomain.com";
+constexpr const char* kBrainServerApiToken = "REPLACE_WITH_BRAIN_SERVER_TOKEN";
+constexpr bool kBrainServerUseInsecureTls = true;
+
 }  // namespace Flic

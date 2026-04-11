@@ -23,17 +23,15 @@ public:
     float voiceSpeed() const;
     float voicePitch() const;
     float voiceClarity() const;
-    void setFallbackVoiceEnabled(bool enabled);
-    bool fallbackVoiceEnabled() const;
     void setAmplitudeEnvelopeHandler(AmplitudeEnvelopeFn handler, void* context);
+    void speakPiper(const String& msg,
+                   const String& emotion = "neutral",
+                   const String& lang = "en",
+                   float speedScale = 1.0f,
+                   float pitchScale = 1.0f);
+    bool playWavFromSd(const String& path);
     void speakTTS(const String& msg, const String& emotion = "neutral", const String& lang = "en");
-    void speakCreatureTTS(const char* text, const char* emotion = "neutral", const char* lang = "en");
     void playEmotionTone(const String& emotion);
-    void playCreatureSound(const String& sound);
-    bool playCreatureSound(const char* soundName);
-    void processCreatureDSP(int16_t* samples, size_t count);
-    void setCreatureEmotion(const String& emotion);
-    String creatureEmotion() const;
     void update();  // For streaming audio playback
     bool isSpeaking() const;
 
@@ -48,16 +46,6 @@ private:
 
     uint8_t volume_ = 180;
     VoiceStyle voiceStyle_ = VoiceStyle::Natural;
-    String creatureEmotion_ = "neutral";
-    float dspPitchSemitones_ = 0.0f;
-    float dspFormantShift_ = 1.0f;
-    float dspDistortionDrive_ = 1.0f;
-    float dspEqBoost_ = 1.0f;
-    float dspCompressorThreshold_ = 0.65f;
-    float dspCompressorRatio_ = 2.4f;
-    float dspLowPassCutoffHz_ = 9000.0f;
-    float dspChaosLevel_ = 0.0f;
-    float dspLowPassState_ = 0.0f;
     NeuralTtsEngine neuralTts_;
 };
 

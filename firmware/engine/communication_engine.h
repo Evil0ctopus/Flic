@@ -9,7 +9,6 @@ class PersonalityUI;
 class AnimationEngine;
 class EmotionEngine;
 class MemoryManager;
-class TextBubbles;
 class VoiceEngine;
 class FaceEngine;
 
@@ -20,7 +19,6 @@ public:
                AnimationEngine* animationEngine,
                EmotionEngine* emotionEngine,
                MemoryManager* memoryManager,
-               TextBubbles* textBubbles,
                VoiceEngine* voiceEngine,
                FaceEngine* faceEngine = nullptr);
 
@@ -41,7 +39,6 @@ private:
     AnimationEngine* animationEngine_ = nullptr;
     EmotionEngine* emotionEngine_ = nullptr;
     MemoryManager* memoryManager_ = nullptr;
-    TextBubbles* textBubbles_ = nullptr;
     VoiceEngine* voiceEngine_ = nullptr;
     FaceEngine* faceEngine_ = nullptr;
     String activeEmotion_ = "calm";

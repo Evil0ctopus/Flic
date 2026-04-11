@@ -31,18 +31,6 @@ void CameraEngine::update() {
         lastEventMs_ = now;
     }
 
-    // Optional IMU-assisted motion proxy when touch is idle.
-    if (!touchActive && M5.Imu.isEnabled() && (now - lastEventMs_) > 1400) {
-        float gx = 0.0f, gy = 0.0f, gz = 0.0f;
-        M5.Imu.getGyro(&gx, &gy, &gz);
-        const float gyroMotion = fabsf(gx) + fabsf(gy) + fabsf(gz);
-        if (gyroMotion > 1.6f) {
-            hasEvent_ = true;
-            event_ = "motion";
-            detail_ = "proxy_imu_motion";
-            lastEventMs_ = now;
-        }
-    }
     lastTouchActive_ = touchActive;
 }
 

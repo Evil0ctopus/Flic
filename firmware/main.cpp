@@ -1,6 +1,9 @@
 #include <Arduino.h>
 #include <ArduinoJson.h>
 #include <M5Unified.h>
+#include <HTTPClient.h>
+#include <WiFi.h>
+#include <WiFiClientSecure.h>
 #include <vector>
 
 #include "config.h"
@@ -11,6 +14,8 @@
 #include "engine/touch_input.h"
 #include "engine/touch_engine.h"
 #include "engine/voice_engine.h"
+#include "engine/sd_voice_pack_loader.h"
+#include "engine/voicepack_manager.h"
 #include "engine/asr_engine.h"
 #include "engine/webui_engine.h"
 #include "engine/audio_input.h"
@@ -18,7 +23,6 @@
 #include "engine/audio_output.h"
 #include "engine/camera_engine.h"
 #include "engine/environment_light_engine.h"
-#include "engine/imu_engine.h"
 #include "engine/learning_engine.h"
 #include "engine/face_engine.h"
 #include "engine/face_settings_manager.h"
@@ -36,7 +40,6 @@
 #include "diagnostics/sd_diagnostics.h"
 #include "diagnostics/webui_event_hook.h"
 #include "ui/personality_ui.h"
-#include "ui/text_bubbles.h"
 
 namespace {
 struct RuntimeSettings {
@@ -53,13 +56,11 @@ struct RuntimeSettings {
     bool voiceInputEnabled = true;
     bool autonomyEnabled = true;
     bool webHeartbeatEnabled = true;
-    bool imuEventsEnabled = true;
     bool usbEventsEnabled = true;
     String voiceModel = "";
     float voiceSpeed = 1.0f;
     float voicePitch = 1.0f;
     float voiceClarity = 1.0f;
-    bool fallbackVoiceEnabled = true;
 };
 
 Flic::AnimationEngine animationEngine;
@@ -75,17 +76,17 @@ Flic::LearningEngine learningEngine;
 Flic::FaceEngine faceEngine;
 Flic::FaceSettingsManager faceSettingsManager;
 Flic::MilestoneEngine milestoneEngine;
-Flic::TextBubbles textBubbles;
 Flic::CommunicationEngine communicationEngine;
 Flic::TouchInput touchInput;
 Flic::TouchEngine touchEngine;
 Flic::AudioInput audioInput;
 Flic::AudioOutput audioOutput;
 Flic::VoiceEngine voiceEngine;
+Flic::SdVoicePackLoader sdVoicePackLoader;
+Flic::VoicePackManager voicePackManager;
 Flic::AsrEngine asrEngine;
 Flic::WebUiEngine webUiEngine;
 Flic::CameraEngine cameraEngine;
-Flic::ImuEngine imuEngine;
 Flic::EnvironmentLightEngine environmentLightEngine;
 Flic::SettingsManager settingsManager;
 RuntimeSettings runtimeSettings;
@@ -104,7 +105,6 @@ constexpr const char* kFeaturesPrefix = "FEATURES:";
 constexpr size_t kFeaturesPrefixLength = 9;
 constexpr const char* kEventTouch = "touch";
 constexpr const char* kEventCamera = "camera";
-constexpr const char* kEventImu = "imu";
 constexpr const char* kEventLight = "light";
 constexpr const char* kEventDeviceConnected = "device_connected";
 constexpr const char* kEventDeviceIdentified = "device_identified";
@@ -116,7 +116,6 @@ constexpr const char* kEventCommandRejected = "command_rejected";
 constexpr const char* kHandWaveEvent = "hand_wave";
 constexpr uint8_t kMaxUsbMessagesPerLoop = 6;
 constexpr unsigned long kMotionNotifyCooldownMs = 2200;
-constexpr unsigned long kImuNotifyCooldownMs = 2200;
 constexpr unsigned long kWebHeartbeatMs = 1000;
 constexpr bool kEmergencyMinimalLoop = false;
 constexpr bool kDisableVoiceRuntime = false;
@@ -128,26 +127,23 @@ constexpr unsigned long kVoiceLiteUpdateIntervalMs = 120;
 constexpr unsigned long kVoiceLiteInputPollIntervalMs = 120;
 constexpr unsigned long kVoiceLiteFeedbackCooldownMs = 700;
 constexpr bool kVoiceLiteAutoSentenceReplies = true;
-constexpr bool kDisableImuEngine = false;
 constexpr bool kEnableUsbRuntime = true;
 constexpr bool kEnableMilestoneRuntime = true;
 constexpr bool kSafeBootMode = false;
-constexpr bool kShowWebUiTextBubbles = false;
 constexpr bool kRunBootExpressionDemo = false;
-constexpr bool kRunCreatureVoiceSelfTestOnBoot = true;
-constexpr bool kRunCreatureVoiceSelfTestInLoop = true;
+constexpr bool kRunVoiceSelfTestOnBoot = true;
+constexpr bool kRunVoiceSelfTestInLoop = true;
 constexpr bool kRunSdDeepVerifyOnBoot = false;
+constexpr const char* kStartupVoicePhrase = "Hello friend. Voice system online.";
+constexpr const char* kPostBootVoicePhrase = "Hello friend. Voice check complete. I am ready.";
 
 unsigned long lastLoopMs = 0;
 unsigned long lastMotionNotifyMs = 0;
-unsigned long lastImuNotifyMs = 0;
 unsigned long lastWebHeartbeatMs = 0;
 unsigned long lastVoiceUpdateMs = 0;
 unsigned long lastVoiceInputPollMs = 0;
 unsigned long lastVoiceFeedbackMs = 0;
 
-String lastImuEventName;
-String lastImuEventDetail;
 String lastLightEventName;
 String lastLightEventDetail;
 String lastTouchGesture;
@@ -171,13 +167,252 @@ unsigned long lastVoiceMs = 0;
 unsigned long lastMotionMs = 0;
 unsigned long bootStartMs = 0;
 unsigned long postInitVoiceTestUntilMs = 0;
-unsigned long lastWebUiHintBubbleMs = 0;
+bool gAudioInputEnginesReady = false;
+bool gAudioAvailable = false;
+bool gPostBootVoiceTestPending = false;
+unsigned long gPostBootVoiceTestAtMs = 0;
+bool gBrainPipelineSelfTestPending = false;
+unsigned long gBrainPipelineSelfTestAtMs = 0;
+bool gPersonalityModeActive = true;
+String gVoiceProfile = "modern_default";
 LearnedTopic learnedTopics[3];
 float needConnection = 0.25f;
 float needPlay = 0.20f;
 float needCalm = 0.12f;
 float needLight = 0.10f;
 constexpr bool kTestMinimalBoot = false;
+constexpr unsigned long kBootWiFiConnectBudgetMs = 8000UL;
+constexpr bool kPlayStartupBeep = false;
+constexpr unsigned long kPostBootVoiceTestDelayMs = 12000UL;
+constexpr unsigned long kBrainPipelineSelfTestDelayMs = 22000UL;
+
+void VoiceTrace(const String& message) {
+    Serial.printf("[VoiceTrace] %s\n", message.c_str());
+}
+
+String jsonEscape(const String& input) {
+    String out;
+    out.reserve(input.length() + 16);
+    for (size_t i = 0; i < static_cast<size_t>(input.length()); ++i) {
+        const char c = input.charAt(i);
+        switch (c) {
+            case '"':
+                out += "\\\"";
+                break;
+            case '\\':
+                out += "\\\\";
+                break;
+            case '\n':
+                out += "\\n";
+                break;
+            case '\r':
+                out += "\\r";
+                break;
+            case '\t':
+                out += "\\t";
+                break;
+            default:
+                out += c;
+                break;
+        }
+    }
+    return out;
+}
+
+bool brainServerConfigured() {
+    return strlen(Flic::kBrainServerBaseUrl) > 0 && strlen(Flic::kBrainServerApiToken) > 0;
+}
+
+String brainUrlForPath(const char* path) {
+    String base = Flic::kBrainServerBaseUrl;
+    base.trim();
+    while (base.endsWith("/")) {
+        base.remove(base.length() - 1);
+    }
+
+    String p = String(path == nullptr ? "" : path);
+    if (!p.startsWith("/")) {
+        p = "/" + p;
+    }
+    return base + p;
+}
+
+bool brainPostJson(const char* path, const String& payload, String& responseBody, int& httpCodeOut) {
+    responseBody = "";
+    httpCodeOut = -1;
+
+    if (!brainServerConfigured() || WiFi.status() != WL_CONNECTED) {
+        return false;
+    }
+
+    const String url = brainUrlForPath(path);
+    const bool useHttps = url.startsWith("https://");
+
+    HTTPClient http;
+    bool began = false;
+    if (useHttps) {
+        WiFiClientSecure secureClient;
+        if (Flic::kBrainServerUseInsecureTls) {
+            secureClient.setInsecure();
+        }
+        began = http.begin(secureClient, url);
+    } else {
+        WiFiClient plainClient;
+        began = http.begin(plainClient, url);
+    }
+
+    if (!began) {
+        VoiceTrace(String("VOICE: brain_http_begin_failed=") + url);
+        return false;
+    }
+
+    http.setTimeout(12000);
+    http.addHeader("Content-Type", "application/json");
+    http.addHeader("Authorization", String("Bearer ") + String(Flic::kBrainServerApiToken));
+
+    const int code = http.POST(payload);
+    httpCodeOut = code;
+    if (code > 0) {
+        responseBody = http.getString();
+    }
+    http.end();
+
+    return code >= 200 && code < 300;
+}
+
+bool parseJsonField(const String& json, const char* field, String& out) {
+    out = "";
+    if (json.length() == 0 || field == nullptr) {
+        return false;
+    }
+
+    JsonDocument doc;
+    const DeserializationError err = deserializeJson(doc, json);
+    if (err) {
+        return false;
+    }
+    out = doc[field] | "";
+    return out.length() > 0;
+}
+
+bool runBrainServerConversation(const String& sttText, String& llmReplyOut, String& personaOut, String& wavPathOut) {
+    llmReplyOut = "";
+    personaOut = "";
+    wavPathOut = "";
+
+    if (!brainServerConfigured()) {
+        return false;
+    }
+
+    String response;
+    int code = -1;
+
+    const String respondPayload = String("{\"text\":\"") + jsonEscape(sttText) + "\"}";
+    if (!brainPostJson("/respond", respondPayload, response, code)) {
+        VoiceTrace(String("VOICE: brain_respond_failed code=") + String(code));
+        return false;
+    }
+
+    if (!parseJsonField(response, "reply", llmReplyOut)) {
+        VoiceTrace("VOICE: brain_respond_parse_failed");
+        return false;
+    }
+    VoiceTrace(String("VOICE: llm_reply=") + llmReplyOut);
+
+    const String inferredEmotion = communicationEngine.inferEmotionFromText(llmReplyOut);
+    const String personaPayload = String("{\"text\":\"") + jsonEscape(llmReplyOut) + "\",\"emotion\":\"" + jsonEscape(inferredEmotion) + "\"}";
+    if (!brainPostJson("/persona", personaPayload, response, code)) {
+        VoiceTrace(String("VOICE: brain_persona_failed code=") + String(code));
+        return false;
+    }
+
+    if (!parseJsonField(response, "text", personaOut)) {
+        VoiceTrace("VOICE: brain_persona_parse_failed");
+        return false;
+    }
+    VoiceTrace(String("VOICE: persona_output=") + personaOut);
+
+    const String ttsPayload = String("{\"text\":\"") + jsonEscape(personaOut) + "\"}";
+    if (!brainPostJson("/tts", ttsPayload, response, code)) {
+        VoiceTrace(String("VOICE: brain_tts_failed code=") + String(code));
+        return false;
+    }
+
+    if (!parseJsonField(response, "wav_path", wavPathOut)) {
+        VoiceTrace("VOICE: brain_tts_parse_failed");
+        return false;
+    }
+    VoiceTrace(String("VOICE: wav_ready=") + wavPathOut);
+    return true;
+}
+
+void runBrainPipelineSelfTestIfArmed() {
+    if (!gBrainPipelineSelfTestPending) {
+        return;
+    }
+
+    const unsigned long nowMs = millis();
+    if (nowMs < gBrainPipelineSelfTestAtMs) {
+        return;
+    }
+
+    // Run a deterministic local fallback if brain routing is not yet available.
+    if (WiFi.status() != WL_CONNECTED || !brainServerConfigured()) {
+        Serial.printf("[VOICEDEBUG] selftest fallback wifi=%d brain_cfg=%d\n",
+                      static_cast<int>(WiFi.status() == WL_CONNECTED),
+                      static_cast<int>(brainServerConfigured()));
+        VoiceTrace("VOICE: stt_text=selftest local fallback");
+        communicationEngine.speakText("Voice self test local mode.");
+        VoiceTrace("VOICE: selftest local complete");
+        gBrainPipelineSelfTestPending = false;
+        return;
+    }
+
+    const String sttProbe = "hello flic pipeline self test";
+    VoiceTrace(String("VOICE: stt_text=") + sttProbe);
+
+    String llmReply;
+    String personaOut;
+    String wavPath;
+    if (runBrainServerConversation(sttProbe, llmReply, personaOut, wavPath)) {
+        const String emotion = communicationEngine.inferEmotionFromText(personaOut);
+        communicationEngine.notify(personaOut, emotion);
+        gBrainPipelineSelfTestPending = false;
+        VoiceTrace("VOICE: selftest complete");
+        return;
+    }
+
+    gBrainPipelineSelfTestAtMs = nowMs + 10000UL;
+    VoiceTrace("VOICE: selftest retry scheduled");
+}
+
+enum class BootVisualState : uint8_t {
+    Hardware,
+    Storage,
+    Engines,
+    VoiceSelfTest,
+    Runtime,
+};
+
+void applyBootVisualState(BootVisualState state) {
+    switch (state) {
+        case BootVisualState::Hardware:
+            lightEngine.setColor(0, 0, 40);
+            break;
+        case BootVisualState::Storage:
+            lightEngine.pulse(0, 64, 200, 10);
+            break;
+        case BootVisualState::Engines:
+            lightEngine.pulse(120, 80, 255, 10);
+            break;
+        case BootVisualState::VoiceSelfTest:
+            lightEngine.pulse(0, 220, 160, 10);
+            break;
+        case BootVisualState::Runtime:
+            lightEngine.emotionColor("calm");
+            break;
+    }
+}
 
 String composeWebUiHelpMessage() {
     if (!webUiEngine.isReady()) {
@@ -273,8 +508,6 @@ String composeWebUiStatus() {
     payload += String(runtimeSettings.voicePitch, 2);
     payload += ",\"voice_clarity\":";
     payload += String(runtimeSettings.voiceClarity, 2);
-    payload += ",\"fallback_voice\":";
-    payload += runtimeSettings.fallbackVoiceEnabled ? "true" : "false";
     payload += ",\"available_voices\":";
     payload += composeVoiceModelsJsonArray();
     payload += ",\"personality\":{\"energy\":";
@@ -299,8 +532,6 @@ String composeWebUiStatus() {
     payload += runtimeSettings.autonomyEnabled ? "true" : "false";
     payload += ",\"web_heartbeat\":";
     payload += runtimeSettings.webHeartbeatEnabled ? "true" : "false";
-    payload += ",\"imu_events\":";
-    payload += runtimeSettings.imuEventsEnabled ? "true" : "false";
     payload += ",\"usb_events\":";
     payload += runtimeSettings.usbEventsEnabled ? "true" : "false";
     payload += "}}";
@@ -309,11 +540,7 @@ String composeWebUiStatus() {
 }
 
 String composeWebUiSensors() {
-    String payload = "{\"ok\":true,\"type\":\"sensors\",\"imu\":{\"event\":\"";
-    payload += lastImuEventName;
-    payload += "\",\"detail\":\"";
-    payload += lastImuEventDetail;
-    payload += "\"},\"light\":{\"event\":\"";
+    String payload = "{\"ok\":true,\"type\":\"sensors\",\"light\":{\"event\":\"";
     payload += lastLightEventName;
     payload += "\",\"detail\":\"";
     payload += lastLightEventDetail;
@@ -331,7 +558,7 @@ String composeWebUiSensors() {
 
 String composeWebUiEngines() {
     const bool usbReady = usbEngine.connectedDeviceId().length() > 0;
-    String payload = "{\"ok\":true,\"type\":\"engines\",\"touch\":true,\"imu\":true,\"light\":true,\"camera\":true,\"audio\":true,\"usb\":";
+    String payload = "{\"ok\":true,\"type\":\"engines\",\"touch\":true,\"light\":true,\"camera\":true,\"audio\":true,\"usb\":";
     payload += usbReady ? "true" : "false";
     payload += ",\"communication\":true,\"emotion\":true,\"animation\":true,\"milestone\":true,\"learning\":true}";
     return payload;
@@ -366,7 +593,6 @@ void applyRuntimeSettings() {
     audioOutput.setVolume(runtimeSettings.volume);
     audioOutput.setVoiceStyle(runtimeSettings.voiceStyle);
     audioOutput.setVoiceTuning(runtimeSettings.voiceSpeed, runtimeSettings.voicePitch, runtimeSettings.voiceClarity);
-    audioOutput.setFallbackVoiceEnabled(runtimeSettings.fallbackVoiceEnabled);
     if (runtimeSettings.voiceModel.length() > 0) {
         audioOutput.setActiveVoiceModel(runtimeSettings.voiceModel);
     }
@@ -394,6 +620,48 @@ void applyRuntimeSettings() {
     } else {
         Flic::Debug::setRuntimeLogLevel(3);
     }
+}
+
+void initializeVoiceAndPersonalityProfile() {
+    VoiceTrace("VOICE: Piper init");
+
+    runtimeSettings.voiceModel = "en_US-lessac-medium.onnx";
+    runtimeSettings.voiceSpeed = 1.10f;
+    runtimeSettings.voicePitch = 1.10f;
+    runtimeSettings.voiceClarity = 1.0f;
+    audioOutput.setVoiceTuning(runtimeSettings.voiceSpeed, runtimeSettings.voicePitch, runtimeSettings.voiceClarity);
+    audioOutput.setActiveVoiceModel(runtimeSettings.voiceModel);
+
+    if (M5.Speaker.isEnabled() && !M5.Speaker.isRunning()) {
+        const bool started = M5.Speaker.begin();
+        Serial.printf("[VoiceTrace] AUDIO: voice init speaker begin=%s\n", started ? "ok" : "fail");
+    }
+
+    const bool sdPackLoaded = sdVoicePackLoader.begin();
+    voicePackManager.BindOutput(&audioOutput);
+    const bool voicePackLoaded = voicePackManager.Init();
+    // Keep audio path active when speaker is available; VoiceEngine handles missing-pack fallback tones.
+    gAudioAvailable = M5.Speaker.isEnabled() && M5.Speaker.isRunning();
+
+    voiceEngine.setSdVoicePackLoader(&sdVoicePackLoader);
+    voiceEngine.setVoicePackManager(&voicePackManager);
+
+    gPersonalityModeActive = true;
+    gVoiceProfile = "StitchCreature";
+    voiceEngine.setVoiceProfile(gVoiceProfile);
+    voiceEngine.setPersonalitySpeechEnabled(true);
+    voiceEngine.setPiperAvailable(false);
+    voiceEngine.setAudioAvailable(gAudioAvailable);
+
+    VoiceTrace("VOICE: personality=StitchCreature");
+    VoiceTrace("VOICE: backend=Piper");
+    VoiceTrace(String("AUDIO: speaker enabled=") + String(M5.Speaker.isEnabled() ? "1" : "0") +
+               String(" running=") + String(M5.Speaker.isRunning() ? "1" : "0"));
+    VoiceTrace("VOICE: system_cleaned (bubble+accelerometer removed)");
+    (void)sdPackLoaded;
+    VoiceTrace(String("VOICE: SD pack=") + (voicePackLoaded ? "loaded" : "missing"));
+    VoiceTrace(String("VOICE: backend_status=") + (voiceEngine.piperAvailable() ? "available" : "unavailable"));
+    VoiceTrace("VOICE: init complete");
 }
 
 bool readNumericRange(JsonVariantConst value, float minimumValue, float maximumValue, float& output);
@@ -1034,7 +1302,6 @@ void persistRuntimeSettings() {
     voice["speed"] = runtimeSettings.voiceSpeed;
     voice["pitch"] = runtimeSettings.voicePitch;
     voice["clarity"] = runtimeSettings.voiceClarity;
-    voice["fallback"] = runtimeSettings.fallbackVoiceEnabled;
 
     JsonObject personality = settings["personality"].to<JsonObject>();
     personality["energy"] = runtimeSettings.personalityEnergy * 100.0f;
@@ -1050,7 +1317,6 @@ void persistRuntimeSettings() {
     runtime["voice_input"] = runtimeSettings.voiceInputEnabled;
     runtime["autonomy"] = runtimeSettings.autonomyEnabled;
     runtime["web_heartbeat"] = runtimeSettings.webHeartbeatEnabled;
-    runtime["imu_events"] = runtimeSettings.imuEventsEnabled;
     runtime["usb_events"] = runtimeSettings.usbEventsEnabled;
 
     settingsManager.save(document);
@@ -1116,7 +1382,6 @@ void loadRuntimeSettings() {
         runtimeSettings.voiceInputEnabled = runtime["voice_input"] | runtimeSettings.voiceInputEnabled;
         runtimeSettings.autonomyEnabled = runtime["autonomy"] | runtimeSettings.autonomyEnabled;
         runtimeSettings.webHeartbeatEnabled = runtime["web_heartbeat"] | runtimeSettings.webHeartbeatEnabled;
-        runtimeSettings.imuEventsEnabled = runtime["imu_events"] | runtimeSettings.imuEventsEnabled;
         runtimeSettings.usbEventsEnabled = runtime["usb_events"] | runtimeSettings.usbEventsEnabled;
     }
 
@@ -1135,7 +1400,6 @@ void loadRuntimeSettings() {
         if (readNumericRange(voice["clarity"], 0.5f, 2.0f, numericValue)) {
             runtimeSettings.voiceClarity = numericValue;
         }
-        runtimeSettings.fallbackVoiceEnabled = voice["fallback"] | runtimeSettings.fallbackVoiceEnabled;
     }
 }
 
@@ -1247,15 +1511,6 @@ bool handleWebUiSettings(const String& requestJson, String& responseJson) {
         changed = true;
     }
 
-    if (!root["fallback_voice"].isNull()) {
-        if (!root["fallback_voice"].is<bool>()) {
-            responseJson = "{\"ok\":false,\"error\":\"fallback_voice_must_be_boolean\"}";
-            return false;
-        }
-        nextSettings.fallbackVoiceEnabled = root["fallback_voice"].as<bool>();
-        changed = true;
-    }
-
     JsonVariant voice = root["voice"];
     if (!voice.isNull()) {
         if (!voice.is<JsonObjectConst>()) {
@@ -1301,14 +1556,6 @@ bool handleWebUiSettings(const String& requestJson, String& responseJson) {
                 return false;
             }
             nextSettings.voiceClarity = value;
-            changed = true;
-        }
-        if (!voiceObject["fallback"].isNull()) {
-            if (!voiceObject["fallback"].is<bool>()) {
-                responseJson = "{\"ok\":false,\"error\":\"fallback_voice_must_be_boolean\"}";
-                return false;
-            }
-            nextSettings.fallbackVoiceEnabled = voiceObject["fallback"].as<bool>();
             changed = true;
         }
     }
@@ -1440,14 +1687,6 @@ bool handleWebUiSettings(const String& requestJson, String& responseJson) {
             nextSettings.webHeartbeatEnabled = runtimeObject["web_heartbeat"].as<bool>();
             changed = true;
         }
-        if (!runtimeObject["imu_events"].isNull()) {
-            if (!runtimeObject["imu_events"].is<bool>()) {
-                responseJson = "{\"ok\":false,\"error\":\"runtime_imu_events_must_be_boolean\"}";
-                return false;
-            }
-            nextSettings.imuEventsEnabled = runtimeObject["imu_events"].as<bool>();
-            changed = true;
-        }
         if (!runtimeObject["usb_events"].isNull()) {
             if (!runtimeObject["usb_events"].is<bool>()) {
                 responseJson = "{\"ok\":false,\"error\":\"runtime_usb_events_must_be_boolean\"}";
@@ -1491,6 +1730,23 @@ bool handleWebUiCommand(const String& requestJson, String& responseJson) {
 
     String reply;
     String emotion = "calm";
+    if (lower.indexOf("voice_test") >= 0 || lower.indexOf("voice test") >= 0 || lower.indexOf("brain test") >= 0) {
+        const String sttProbe = "hello flic web command self test";
+        VoiceTrace(String("VOICE: stt_text=") + sttProbe);
+
+        String llmReply;
+        String personaOut;
+        String wavPath;
+        if (runBrainServerConversation(sttProbe, llmReply, personaOut, wavPath)) {
+            const String inferredEmotion = communicationEngine.inferEmotionFromText(personaOut);
+            communicationEngine.notify(personaOut, inferredEmotion);
+            reply = "Voice pipeline self-test complete.";
+            emotion = "happy";
+        } else {
+            reply = "Voice pipeline self-test failed. Check Brain URL/token and WiFi.";
+            emotion = "warning";
+        }
+    } else
     if (lower.indexOf("preview face") >= 0 || lower.indexOf("face preview") >= 0) {
         String previewStyle = faceSettingsManager.current().activeStyle;
         if (lower.indexOf("soft_glow") >= 0) {
@@ -1647,14 +1903,27 @@ void initializeCoreS3() {
     auto config = M5.config();
     config.clear_display = true;
     config.output_power = true;
-    config.internal_imu = true;
+    config.internal_imu = false;
+    config.external_imu = false;
     config.internal_rtc = true;
     config.internal_spk = !kPreferMicStabilityOverSpeaker;
     config.internal_mic = kPreferMicStabilityOverSpeaker;
 
     M5.begin(config);
+    auto spkCfg = M5.Speaker.config();
+    Serial.printf("[VoiceTrace] AUDIO: cfg pin_out=%d bck=%d ws=%d mck=%d running=%d\n",
+                  spkCfg.pin_data_out,
+                  spkCfg.pin_bck,
+                  spkCfg.pin_ws,
+                  spkCfg.pin_mck,
+                  static_cast<int>(M5.Speaker.isRunning()));
+    if (M5.Speaker.isEnabled() && !M5.Speaker.isRunning()) {
+        const bool started = M5.Speaker.begin();
+        Serial.printf("[VoiceTrace] AUDIO: core speaker begin=%s\n", started ? "ok" : "fail");
+    }
+    M5.Speaker.setVolume(180);
     M5.Display.setBrightness(128);
-    if (M5.Speaker.isEnabled()) {
+    if (kPlayStartupBeep && M5.Speaker.isEnabled()) {
         M5.Speaker.setVolume(180);
         M5.Speaker.tone(740.0f, 80);
         delay(20);
@@ -1692,19 +1961,23 @@ void initializeWiFi() {
     Serial.println("Flic: Connecting to WiFi...");
     WiFi.mode(WIFI_STA);
     WiFi.begin(Flic::kWiFiSSID, Flic::kWiFiPassword);
-    
+
+    const unsigned long connectBudgetMs =
+        (Flic::kWiFiConnectTimeoutMs < kBootWiFiConnectBudgetMs) ? Flic::kWiFiConnectTimeoutMs : kBootWiFiConnectBudgetMs;
     uint32_t startTime = millis();
-    while (WiFi.status() != WL_CONNECTED && (millis() - startTime) < Flic::kWiFiConnectTimeoutMs) {
-        delay(500);
+    while (WiFi.status() != WL_CONNECTED && (millis() - startTime) < connectBudgetMs) {
+        lightEngine.update();
+        delay(120);
         Serial.print(".");
     }
-    
+
     if (WiFi.status() == WL_CONNECTED) {
         Serial.println();
         Serial.println(String("Flic: WiFi connected! IP: ") + WiFi.localIP().toString());
     } else {
         Serial.println();
-        Serial.println("Flic: WiFi connection timeout. Continuing without WiFi.");
+        Serial.printf("Flic: WiFi connection timeout after %lu ms. Continuing without WiFi.\n",
+                      static_cast<unsigned long>(connectBudgetMs));
     }
 }
 
@@ -1736,24 +2009,30 @@ void initializeCoreEngines() {
     personalityUi.begin(&emotionEngine, &lightEngine, &faceEngine);
     deviceLearning.begin(&memoryManager, &proposalSystem);
     learningEngine.begin(&memoryManager, &deviceLearning, &faceEngine);
-    textBubbles.begin();
-    communicationEngine.begin(&lightEngine, &personalityUi, &animationEngine, &emotionEngine, &memoryManager, &textBubbles,
+    communicationEngine.begin(&lightEngine, &personalityUi, &animationEngine, &emotionEngine, &memoryManager,
                               &voiceEngine, &faceEngine);
     if (kEnableMilestoneRuntime) {
         milestoneEngine.begin(&memoryManager, &animationEngine, &emotionEngine, &communicationEngine);
     }
 }
 
-void initializeInteractionEngines() {
+void initializeInteractionEnginesOutputFirst() {
     touchEngine.begin(&touchInput);
-    voiceEngine.begin(&audioInput, &audioOutput, &faceEngine);
+    voiceEngine.begin(nullptr, &audioOutput, &faceEngine);
     audioOutput.setAmplitudeEnvelopeHandler(onTtsAmplitudeEnvelope, nullptr);
-    asrEngine.begin();
     cameraEngine.begin();
-    if (!kDisableImuEngine) {
-        imuEngine.begin();
-    }
     environmentLightEngine.begin();
+}
+
+void initializeDeferredAudioInputEngines() {
+    if (gAudioInputEnginesReady) {
+        return;
+    }
+
+    voiceEngine.attachAudioInput(&audioInput, true);
+    asrEngine.begin();
+    gAudioInputEnginesReady = true;
+    Serial.println("[BOOT] Deferred audio input engines ready.");
 }
 
 void runBootExpressionDemoIfEnabled() {
@@ -1804,9 +2083,25 @@ void handleAsrTranscripts() {
         return;
     }
 
+    VoiceTrace(String("VOICE: stt_text=") + transcript);
+
     String lower = transcript;
     lower.toLowerCase();
     learnFromUserSentence(lower);
+
+    String remoteReply;
+    String remotePersona;
+    String remoteWavPath;
+    if (runBrainServerConversation(transcript, remoteReply, remotePersona, remoteWavPath)) {
+        const String remoteEmotion = communicationEngine.inferEmotionFromText(remotePersona);
+        communicationEngine.notify(remotePersona, remoteEmotion);
+        memoryManager.recordEvent("voice_text", transcript);
+        memoryManager.recordEvent("voice_source", source);
+        memoryManager.recordEvent("llm_reply", remoteReply);
+        memoryManager.recordEvent("persona_output", remotePersona);
+        memoryManager.recordEvent("wav_ready", remoteWavPath);
+        return;
+    }
 
     String reply;
     String replyEmotion = "calm";
@@ -1820,7 +2115,7 @@ void handleAsrTranscripts() {
         reply = "I'm Flic.";
         replyEmotion = "happy";
     } else if (lower.indexOf("what can you do") >= 0) {
-        reply = "I can react, emote, and respond with text bubbles.";
+        reply = "I can react, emote, and respond with voice and animation.";
         replyEmotion = "curious";
     } else {
         reply = String("I heard: ") + transcript;
@@ -1839,7 +2134,6 @@ void initializeRuntimeServices() {
 
     lastLoopMs = millis();
     lastMotionNotifyMs = 0;
-    lastImuNotifyMs = 0;
     lastWebHeartbeatMs = 0;
     lastVoiceUpdateMs = 0;
     lastVoiceInputPollMs = 0;
@@ -1882,29 +2176,17 @@ void initializeRuntimeServices() {
                 Serial.println("Flic: WebUI AP fallback mode enabled.");
                 Serial.println("Flic: AP SSID=Flic-Setup password=flic-dev-only");
                 Serial.println(webUiInfo);
-                if (kShowWebUiTextBubbles) {
-                    textBubbles.showMessage("WebUI AP mode\nSSID: Flic-Setup\nPW: flic-dev-only\n" + webUiInfo, Flic::BubbleSize::Large, "curious");
-                }
             } else {
                 Serial.println(String("Flic: WebUI ready at http://") + webUiEngine.localIp().toString());
-                if (kShowWebUiTextBubbles) {
-                    textBubbles.showMessage(webUiInfo, Flic::BubbleSize::Medium, "happy");
-                }
             }
             webUiLog("info", "WebUI connected");
             applyRuntimeSettings();
         } else {
             Serial.println("Flic: WebUI disabled (Wi-Fi unavailable or connect timeout).");
-            if (kShowWebUiTextBubbles) {
-                textBubbles.showMessage("WebUI unavailable\nCheck WiFi credentials", Flic::BubbleSize::Medium, "warning");
-            }
             Flic::WebUiEventHook::setSender(nullptr);
         }
     } else {
         Serial.println("Flic: WebUI disabled (SSID not configured).");
-        if (kShowWebUiTextBubbles) {
-            textBubbles.showMessage("WebUI disabled\nSSID not configured", Flic::BubbleSize::Medium, "warning");
-        }
         Flic::WebUiEventHook::setSender(nullptr);
     }
 }
@@ -1946,12 +2228,19 @@ void showEmergencyScreenIfEnabled() {
 
 void updateRuntimeEngines(float dtSeconds) {
     emotionEngine.updateEmotion(dtSeconds);
-    faceEngine.updateMood(dtSeconds);
-    faceEngine.updateMemory(dtSeconds);
-    faceEngine.updateAdaptiveExpressions(dtSeconds);
-    faceEngine.updateAutoEmotion(dtSeconds);
-    faceEngine.update(dtSeconds);
-    faceEngine.drawFrame();
+    const bool speakingNow = audioOutput.isSpeaking();
+
+    if (!speakingNow) {
+        faceEngine.updateMood(dtSeconds);
+        faceEngine.updateMemory(dtSeconds);
+        faceEngine.updateAdaptiveExpressions(dtSeconds);
+        faceEngine.updateAutoEmotion(dtSeconds);
+        faceEngine.update(dtSeconds);
+        faceEngine.drawFrame();
+    } else {
+        // Audio-first mode: reduce visual workload while WAV is streaming.
+        faceEngine.setSpeakingAmplitude(0.8f);
+    }
     audioOutput.update();
     communicationEngine.update();
     if (kEnableMilestoneRuntime) {
@@ -1967,24 +2256,11 @@ void updateRuntimeEngines(float dtSeconds) {
     }
     webUiEngine.update();
     cameraEngine.update();
-    if (!kDisableImuEngine) {
-        imuEngine.update();
-    }
     environmentLightEngine.update();
 }
 
 void recordDetailedEvent(const String& type, const String& name, const String& detail) {
     memoryManager.recordEvent(type, name + ":" + detail);
-}
-
-void handleImuNotification(const String& imuEvent) {
-    if (imuEvent == "shake") {
-        communicationEngine.notify("Whoa, dizzy!", "warning");
-    } else if (imuEvent == "pickup") {
-        communicationEngine.notify("I'm awake.", "happy");
-    } else if (imuEvent == "stillness") {
-        communicationEngine.notify("Quiet mode.", "sleepy");
-    }
 }
 
 void handleTouchInput() {
@@ -2019,7 +2295,6 @@ void handleVoiceInput() {
             normalizedVoice.indexOf("connect") >= 0 || normalizedVoice.indexOf("access") >= 0) {
 
             const String ipInfo = composeWebUiHelpMessage();
-            textBubbles.showMessage(ipInfo, Flic::BubbleSize::Large, "curious");
             emotionEngine.nudgeEmotion("happy", 0.15f);
             communicationEngine.speakText("Here is my web interface information: " + ipInfo);
             lastVoiceFeedbackMs = millis();
@@ -2039,11 +2314,11 @@ void handleVoiceInput() {
                         "Okay, go on.",
                     };
                     constexpr uint8_t kReplyCount = sizeof(replies) / sizeof(replies[0]);
-                    textBubbles.showMessage(replies[replyIndex], Flic::BubbleSize::Medium, "calm");
+                    communicationEngine.speakText(replies[replyIndex]);
                     replyIndex = static_cast<uint8_t>((replyIndex + 1) % kReplyCount);
                     emotionEngine.nudgeEmotion("curious", 0.12f);
                 } else {
-                    textBubbles.showMessage("I heard you.", Flic::BubbleSize::Small, "calm");
+                    communicationEngine.speakText("I heard you.");
                     emotionEngine.nudgeEmotion("calm", 0.10f);
                 }
                 lastVoiceFeedbackMs = nowMs;
@@ -2089,26 +2364,6 @@ void handleCameraEvents() {
     if (cameraEvent == "motion" && (now - lastMotionNotifyMs) >= kMotionNotifyCooldownMs) {
         communicationEngine.notify("Motion detected", "curious");
         lastMotionNotifyMs = now;
-    }
-}
-
-void handleImuEvents() {
-    String imuEvent;
-    String imuDetail;
-    if (!imuEngine.popEvent(imuEvent, imuDetail)) {
-        return;
-    }
-
-    recordDetailedEvent(kEventImu, imuEvent, imuDetail);
-    lastImuEventName = imuEvent;
-    lastImuEventDetail = imuDetail;
-    emotionEngine.observeMotion("imu", imuEvent, imuDetail);
-    lastMotionMs = millis();
-    needPlay = clampNeed(needPlay - 0.10f);
-    const unsigned long now = millis();
-    if ((now - lastImuNotifyMs) >= kImuNotifyCooldownMs) {
-        handleImuNotification(imuEvent);
-        lastImuNotifyMs = now;
     }
 }
 
@@ -2233,6 +2488,68 @@ void handleUsbEvents() {
         personalityUi.showCommandRejected(approvedCommand);
     }
 }
+
+void handleSerialVoiceTestCommand() {
+    static String serialCommandBuffer;
+    while (Serial.available() > 0) {
+        const char c = static_cast<char>(Serial.read());
+        if (c == '\n' || c == '\r') {
+            if (serialCommandBuffer.length() == 0) {
+                continue;
+            }
+            const String rawCommand = serialCommandBuffer;
+            String normalizedCommand = serialCommandBuffer;
+            normalizedCommand.trim();
+            normalizedCommand.toUpperCase();
+            // Always log what the parser saw to simplify serial command debugging.
+            VoiceTrace(String("VOICE: serial rx=") + normalizedCommand);
+            if (normalizedCommand == "VOICETEST" || normalizedCommand == "VOICE_TEST") {
+                VoiceTrace("VOICE: serial command VOICETEST");
+                M5.Speaker.setVolume(180);
+                voiceEngine.setVoiceEmotionState("curious");
+                voiceEngine.speak("Runtime voice check.", "curious");
+                const bool ok = voicePackManager.Play("test_creature");
+                VoiceTrace(String("VOICE: test_playback=") + (ok ? "success" : "fail"));
+            } else if (normalizedCommand == "VOICETESTLONG") {
+                VoiceTrace("VOICE: serial command VOICETESTLONG");
+                voiceEngine.setVoiceEmotionState("curious");
+                voiceEngine.speak("Hello friend. I am testing a longer speaking cadence.", "curious");
+                voiceEngine.speak("I can pause a little, then continue with a second sentence.", "calm");
+                voiceEngine.speak("If this sounds natural, cadence tuning is working.", "happy");
+            } else if (normalizedCommand.startsWith("VOICEKEY ")) {
+                String key = rawCommand;
+                key.trim();
+                key = key.substring(9);
+                key.trim();
+                if (key.length() > 0) {
+                    VoiceTrace(String("VOICE: serial command VOICEKEY key=") + key);
+                    const bool ok = voicePackManager.Play(key.c_str());
+                    if (!ok) {
+                        voiceEngine.setVoiceEmotionState("curious");
+                        voiceEngine.speak("Runtime voice check.", "curious");
+                    }
+                    VoiceTrace(String("VOICE: key_playback=") + (ok ? "success" : "fail"));
+                }
+            } else if (normalizedCommand.startsWith("VOICESAY ")) {
+                String phrase = rawCommand;
+                phrase.trim();
+                phrase = phrase.substring(9);
+                phrase.trim();
+                if (phrase.length() > 0) {
+                    VoiceTrace(String("VOICE: serial command VOICESAY text=") + phrase);
+                    voiceEngine.speak(phrase, "curious");
+                }
+            }
+            serialCommandBuffer = "";
+            continue;
+        }
+
+        if (serialCommandBuffer.length() < 96) {
+            serialCommandBuffer += c;
+        }
+    }
+}
+
 }
 
 void setup() {
@@ -2261,7 +2578,9 @@ void setup() {
     initializeCoreS3();
     bootStartMs = millis();
 
+    applyBootVisualState(BootVisualState::Hardware);
     Serial.println("[BOOT] Mounting SD card...");
+    applyBootVisualState(BootVisualState::Storage);
     initializeStorage();
     Flic::SdManager::printBootSummary();
     Serial.println("[BOOT] SD mount and verification complete.");
@@ -2278,32 +2597,44 @@ void setup() {
     }
 
     Serial.println("[BOOT] Initializing core engines...");
+    applyBootVisualState(BootVisualState::Engines);
     initializeCoreEngines();
-    initializeInteractionEngines();
-    if (kRunCreatureVoiceSelfTestOnBoot) {
-        voiceEngine.setVoiceEmotionState("curious");
-        voiceEngine.speakTextCreature("hmm hi friend tiny creature voice online");
-    }
+    initializeInteractionEnginesOutputFirst();
+
     loadRuntimeSettings();
     applyRuntimeSettings();
+    initializeVoiceAndPersonalityProfile();
+
+    applyBootVisualState(BootVisualState::VoiceSelfTest);
+    if (kRunVoiceSelfTestOnBoot) {
+        const bool playedPhrase = voicePackManager.Play("hello_friend_voice_system_online");
+        if (!playedPhrase) {
+            voiceEngine.setVoiceEmotionState("curious");
+            voiceEngine.speak(kStartupVoicePhrase, "curious");
+        }
+    }
+
     runBootExpressionDemoIfEnabled();
 
     if (!kSafeBootMode) {
         Serial.println("[BOOT] Connecting to WiFi and starting runtime services...");
         initializeWiFi();
         initializeRuntimeServices();
+        initializeDeferredAudioInputEngines();
         const bool hasFaceIdle = faceEngine.loadAnimation("idle");
         if (!hasFaceIdle && !gUseSdFallbackFace) {
             Serial.println("[BOOT] No idle face animation found, running first animation sequence...");
             runFirstAnimationSequence();
             delay(900);
         }
-        if (kShowWebUiTextBubbles) {
-            const String startupWebUi = composeWebUiHelpMessage();
-            textBubbles.showMessage(startupWebUi, Flic::BubbleSize::Large, "curious");
-        }
     }
+    applyBootVisualState(BootVisualState::Runtime);
     showEmergencyScreenIfEnabled();
+
+    gPostBootVoiceTestPending = true;
+    gPostBootVoiceTestAtMs = millis() + kPostBootVoiceTestDelayMs;
+    gBrainPipelineSelfTestPending = true;
+    gBrainPipelineSelfTestAtMs = millis() + kBrainPipelineSelfTestDelayMs;
 
     postInitVoiceTestUntilMs = millis() + 120000UL;
     Serial.println("[BOOT] Runtime voice self-test window armed (120s)");
@@ -2313,6 +2644,7 @@ void setup() {
 
 void loop() {
     M5.update();
+    handleSerialVoiceTestCommand();
 
     const unsigned long now = millis();
     float dtSeconds = static_cast<float>(now - lastLoopMs) / 1000.0f;
@@ -2336,25 +2668,38 @@ void loop() {
 
     updateRuntimeEngines(dtSeconds);
 
-    if (kRunCreatureVoiceSelfTestInLoop && millis() < postInitVoiceTestUntilMs) {
+    if (gPostBootVoiceTestPending && millis() >= gPostBootVoiceTestAtMs) {
+        gPostBootVoiceTestPending = false;
+        const bool playedPhrase = voicePackManager.Play("runtime_voice_check");
+        if (!playedPhrase) {
+            voiceEngine.speak(kPostBootVoicePhrase, "curious");
+        }
+    }
+
+    static unsigned long sVoiceDebugBeatMs = 0;
+    const unsigned long nowVoiceDebugMs = millis();
+    if ((nowVoiceDebugMs - sVoiceDebugBeatMs) >= 10000UL) {
+        sVoiceDebugBeatMs = nowVoiceDebugMs;
+        Serial.printf("[VOICEDEBUG] heartbeat pending=%d now=%lu target=%lu wifi=%d brain_cfg=%d\n",
+                      static_cast<int>(gBrainPipelineSelfTestPending),
+                      static_cast<unsigned long>(nowVoiceDebugMs),
+                      static_cast<unsigned long>(gBrainPipelineSelfTestAtMs),
+                      static_cast<int>(WiFi.status() == WL_CONNECTED),
+                      static_cast<int>(brainServerConfigured()));
+    }
+
+    runBrainPipelineSelfTestIfArmed();
+
+    if (kRunVoiceSelfTestInLoop && millis() < postInitVoiceTestUntilMs) {
         static unsigned long lastVoiceSelfTestMs = 0;
         const unsigned long nowMs = millis();
-        if ((nowMs - lastVoiceSelfTestMs) >= 3000UL) {
+        if ((nowMs - lastVoiceSelfTestMs) >= 5000UL) {
             lastVoiceSelfTestMs = nowMs;
             Serial.println("[VoiceTrace] runtime self-test firing");
             M5.Speaker.setVolume(180);
-            // Direct talker-mode tones (independent of voice engine) for hard audio validation.
-            M5.Speaker.tone(420.0f, 40);
-            delay(12);
-            M5.Speaker.tone(640.0f, 40);
-            delay(12);
-            M5.Speaker.tone(520.0f, 36);
-            delay(12);
-            M5.Speaker.tone(760.0f, 44);
-            delay(12);
-            M5.Speaker.tone(580.0f, 32);
+            M5.Speaker.tone(660.0f, 120);
             voiceEngine.setVoiceEmotionState("curious");
-            voiceEngine.speakTextCreature("gremlin voice check runtime");
+            voiceEngine.speak("Runtime voice check.", "curious");
         }
     }
 
@@ -2369,9 +2714,11 @@ void loop() {
             gLastFallbackFaceDrawMs = nowMs;
         }
     }
-    asrEngine.update();
+    if (gAudioInputEnginesReady) {
+        asrEngine.update();
+    }
     handleTouchInput();
-    if (!kDisableVoiceInputHandling && runtimeSettings.voiceInputEnabled) {
+    if (gAudioInputEnginesReady && !kDisableVoiceInputHandling && runtimeSettings.voiceInputEnabled) {
         const unsigned long nowMs = millis();
         if (!kEnableVoiceLiteMode || (nowMs - lastVoiceInputPollMs) >= kVoiceLiteInputPollIntervalMs) {
             handleVoiceInput();
@@ -2380,9 +2727,6 @@ void loop() {
     }
     handleAsrTranscripts();
     handleCameraEvents();
-    if (!kDisableImuEngine && runtimeSettings.imuEventsEnabled) {
-        handleImuEvents();
-    }
     handleEnvironmentLightEvents();
     if (kEnableUsbRuntime && runtimeSettings.usbEventsEnabled) {
         handleUsbEvents();
@@ -2397,13 +2741,9 @@ void loop() {
         webUiEngine.publishHeartbeat(nowMs, emotionEngine.getEmotion(), animationEngine.isPlaying());
     }
 
-    if (kShowWebUiTextBubbles && !kSafeBootMode && webUiEngine.isReady() && (nowMs - bootStartMs) < 180000UL && (nowMs - lastWebUiHintBubbleMs) >= 25000UL) {
-        lastWebUiHintBubbleMs = nowMs;
-        textBubbles.showMessage(composeWebUiHelpMessage(), Flic::BubbleSize::Large, "curious");
-    }
-
     idleBehavior.update(animationEngine.isPlaying());
     proposalSystem.update(animationEngine.isPlaying());
     lightEngine.update();
+
     delay(Flic::kFrameDelayMs);
 }

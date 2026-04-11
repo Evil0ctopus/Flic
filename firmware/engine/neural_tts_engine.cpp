@@ -82,10 +82,7 @@ void neuralTtsTask(void* parameter) {
 }
 }  // namespace
 
-bool NeuralTtsEngine::begin(FallbackSpeakFn fallbackSpeak, void* fallbackContext) {
-    fallbackSpeak_ = fallbackSpeak;
-    fallbackContext_ = fallbackContext;
-
+bool NeuralTtsEngine::begin() {
     if (SdManager::isMounted()) {
         SdManager::ensureDirectory(SdManager::rootDir());
         SdManager::ensureDirectory(SdManager::voicesDir());
@@ -146,13 +143,7 @@ bool NeuralTtsEngine::processQueuedSpeech(const String& text, const String& emot
         vTaskDelay(pdMS_TO_TICKS(12));
     }
 
-    bool spoken = attemptNeuralInference(text, emotion, lang);
-    if (!spoken && fallbackEnabled_ && fallbackSpeak_ != nullptr) {
-        spoken = fallbackSpeak_(text, emotion, lang, speed_, pitch_, clarity_, fallbackContext_);
-        if (spoken) {
-            Serial.println("[NeuralTts] fallback SAM synthesis used");
-        }
-    }
+    const bool spoken = attemptNeuralInference(text, emotion, lang);
     emitAmplitudeEnvelope(0.0f);
     return spoken;
 }
@@ -221,14 +212,6 @@ float NeuralTtsEngine::clarity() const {
     return clarity_;
 }
 
-void NeuralTtsEngine::setFallbackEnabled(bool enabled) {
-    fallbackEnabled_ = enabled;
-}
-
-bool NeuralTtsEngine::fallbackEnabled() const {
-    return fallbackEnabled_;
-}
-
 bool NeuralTtsEngine::isBusy() const {
     return gNeuralTtsBusy;
 }
@@ -268,13 +251,13 @@ bool NeuralTtsEngine::attemptNeuralInference(const String& text, const String& e
         return false;
     }
 
-    // Placeholder neural path: model discovery and hot-swap are active, with fallback synthesis still available.
+    // Placeholder neural path: model discovery and hot-swap are active.
     Serial.printf("[NeuralTts] Neural model selected: %s (speed=%.2f pitch=%.2f clarity=%.2f)\n",
                   modelPath.c_str(),
                   static_cast<double>(speed_),
                   static_cast<double>(pitch_),
                   static_cast<double>(clarity_));
-    Serial.println("[NeuralTts] Inference backend unavailable in this firmware build, using fallback");
+    Serial.println("[NeuralTts] Inference backend unavailable in this firmware build");
     return false;
 }
 

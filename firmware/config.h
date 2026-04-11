@@ -19,6 +19,11 @@ constexpr uint8_t kExternalRgbLedCount = 10;
 #ifndef FLIC_LOCAL_CONFIG
 constexpr const char* kWiFiSSID = "";
 constexpr const char* kWiFiPassword = "";
+#ifndef FLIC_BRAIN_LOCAL_CONFIG
+constexpr const char* kBrainServerBaseUrl = "";
+constexpr const char* kBrainServerApiToken = "";
+constexpr bool kBrainServerUseInsecureTls = true;
+#endif
 #endif
 constexpr uint32_t kWiFiConnectTimeoutMs = 30000;
 

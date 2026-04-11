@@ -29,6 +29,20 @@
 			"problemMatcher": []
 		},
 		{
+			"label": "Upload Voicepack WAVs to CoreS3 SD",
+			"type": "shell",
+			"command": "python",
+			"args": [
+				"scripts/upload_voicepack_to_cores3.py",
+				"--source",
+				"tools/voicepack/generated",
+				"--port",
+				"COM9"
+			],
+			"group": "build",
+			"problemMatcher": []
+		},
+		{
 			"label": "PlatformIO: Upload",
 			"type": "shell",
 			"command": "python",

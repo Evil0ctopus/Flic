@@ -1,0 +1,39 @@
+{
+  "voicepack": "flic_phrase_fallback_v1",
+  "sample_rate": 22050,
+  "format": "wav_pcm_s16le_mono",
+  "phrases": [
+    {
+      "key": "hello_friend_voice_system_online",
+      "text": "Hello friend. Voice system online."
+    },
+    {
+      "key": "runtime_voice_check",
+      "text": "Runtime voice check."
+    },
+    {
+      "key": "i_can_pause_a_little_then_continue_with_a_second_sentence",
+      "text": "I can pause a little, then continue with a second sentence."
+    },
+    {
+      "key": "if_this_sounds_natural_cadence_tuning_is_working",
+      "text": "If this sounds natural, cadence tuning is working."
+    },
+    {
+      "key": "hello_joshua_flic_awake_now_wiggly_and_curious",
+      "text": "Hello Joshua. Flic is awake now, wiggly and curious."
+    },
+    {
+      "key": "i_heard_you_and_i_am_thinking",
+      "text": "I heard you, and I am thinking."
+    },
+    {
+      "key": "lets_take_this_one_step_at_a_time",
+      "text": "Let us take this one step at a time."
+    },
+    {
+      "key": "okay_i_got_it",
+      "text": "Okay, I got it."
+    }
+  ]
+}

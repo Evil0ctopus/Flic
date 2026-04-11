@@ -1,0 +1,7 @@
+tunnel: flic-brain
+credentials-file: C:\\Users\\jlors\\.cloudflared\\<TUNNEL_ID>.json
+
+ingress:
+  - hostname: brain.yourdomain.com
+    service: http://127.0.0.1:8000
+  - service: http_status:404

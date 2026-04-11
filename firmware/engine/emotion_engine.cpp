@@ -277,15 +277,6 @@ String EmotionEngine::inferEmotionFromSensor(const String& source, const String&
         }
         return "curious";
     }
-    if (sourceLower == "imu" && (eventLower == "shake" || eventLower == "impact")) {
-        return "surprised";
-    }
-    if (sourceLower == "imu" && (eventLower == "pickup" || eventLower == "wake")) {
-        return "happy";
-    }
-    if (sourceLower == "imu" && (eventLower == "stillness" || eventLower == "idle")) {
-        return "sleepy";
-    }
     if (sourceLower == "audio" && detailLower.indexOf("loud") >= 0) {
         return "surprised";
     }
